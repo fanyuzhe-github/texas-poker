@@ -244,7 +244,7 @@ export default {
   created() {
     const defaultPlayersName = ['沙河彭于晏', '三哥', '老陈', '闹闹', '洋洋', '小聪明'];
     const playersName = this.allPlayers ? this.allPlayers.map((player) => player.name) : [];
-    this.playerOptions = new Set([...defaultPlayersName, ...playersName]);
+    this.playerOptions = new Set([...playersName, ...defaultPlayersName]);
   },
   methods: {
     createPlayer(seatNum, name) {
@@ -475,15 +475,6 @@ export default {
 }
 .select-players {
   width: 50%;
-  position: relative;
-}
-.select-players::before {
-  content: '*';
-  position: absolute;
-  top: 12px;
-  left: -18px;
-  color: red;
-  font-size: 20px;
 }
 .chips {
   width: 200px;
