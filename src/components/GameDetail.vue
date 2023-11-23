@@ -35,7 +35,10 @@
         >查看总排行榜</el-button
       >
     </div>
-    <div class="content">
+    <div
+      class="content"
+      v-if="players.length !== 0"
+    >
       <el-row :gutter="20">
         <el-col :span="12">
           <el-table
@@ -290,7 +293,7 @@ export default {
     settleAccount() {
       const inputChips = this.playersSort
         .map((player) => parseFloat(player.chips))
-        .reduce((a, b) => (a * 100 + b * 100) / 100);
+        .reduce((a, b) => parseFloat(((a * 100 + b * 100) / 100).toFixed(2)));
       const correctChips = this.baseChips * this.playersSort.length;
       if (inputChips === correctChips) {
         this.$confirm('结算前请填写好玩家的剩余筹码, 是否继续结算?', '提示', {
@@ -318,7 +321,9 @@ export default {
       const winners = [];
       const losers = [];
       this.playersSort.forEach((player) => {
-        player['actualChips'] = ((player.chips * 100 - this.baseChips * 100) / 100).toFixed(2);
+        player['actualChips'] = parseFloat(
+          ((player.chips * 100 - this.baseChips * 100) / 100).toFixed(2)
+        );
         if (player.actualChips > 0) {
           player['result'] = 'win';
           winners.push(cloneDeep(player));
@@ -350,8 +355,12 @@ export default {
           Math.abs(winners[0].actualChips) - Math.abs(losers[0].actualChips) <= 0
             ? Math.abs(winners[0].actualChips)
             : Math.abs(losers[0].actualChips); // 转账的公差
-        winners[0].actualChips = (winners[0].actualChips * 100 - tolerance * 100) / 100; // 解决js小数精度问题
-        losers[0].actualChips = (losers[0].actualChips * 100 + tolerance * 100) / 100;
+        winners[0].actualChips = parseFloat(
+          ((winners[0].actualChips * 100 - tolerance * 100) / 100).toFixed(2)
+        ); // 解决js小数精度问题
+        losers[0].actualChips = parseFloat(
+          ((losers[0].actualChips * 100 + tolerance * 100) / 100).toFixed(2)
+        );
         const outputInfo = `${losers[0].name} 向 ${winners[0].name} 转账 ${tolerance}元`;
         this.resultInfo.push(outputInfo);
         this.allot(winners, losers);
@@ -401,18 +410,20 @@ export default {
         if (currentPlayer) {
           // 计算今日累计得分
           const playerActualChips = currentPlayer.actualChips;
-          player.score = (parseFloat(playerActualChips) * 100 + player.score * 100) / 100;
+          player.score = parseFloat(
+            ((playerActualChips * 100 + player.score * 100) / 100).toFixed(2)
+          );
           // 计算今日胜负结果
           player.raceResult[currentPlayer.result]++;
-          // 计算连胜状态，出现deuce状态时为0连胜
-          if (currentPlayer.result === 'deuce') {
-            player.stateTimes = 0;
-          } else if (currentPlayer.result === player.lastState) {
-            player.stateTimes++;
-          } else {
-            player.stateTimes = 1;
+          // 计算连胜状态，出现deuce状态时, 保持上一次状态不变
+          if (currentPlayer.result !== 'deuce') {
+            if (currentPlayer.result === player.lastState) {
+              player.stateTimes++;
+            } else {
+              player.stateTimes = 1;
+            }
+            player.lastState = currentPlayer.result; // 记录最后一次的比赛结果
           }
-          player.lastState = currentPlayer.result; // 记录最后一次的比赛结果
         }
       });
       players.sort((a, b) => b.score - a.score);
@@ -438,11 +449,7 @@ export default {
       return `${rate}%`;
     },
     formatterState(row) {
-      if (row.stateTimes === 0) {
-        return `0连胜`;
-      } else {
-        return `${row.stateTimes}连${row.lastState === 'win' ? '胜' : '败'}`;
-      }
+      return `${row.stateTimes}连${row.lastState === 'lose' ? '败' : '胜'}`;
     },
   },
 };
