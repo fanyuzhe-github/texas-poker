@@ -7,7 +7,7 @@
         @click="resetSeat()"
         :disabled="isPlaying"
         :icon="isPlaying ? 'el-icon-basketball' : 'el-icon-guide'"
-        >{{ isPlaying ? '游戏中...' : '开局选座' }}</el-button
+        >{{ isPlaying ? "游戏中..." : "开局选座" }}</el-button
       >
       <el-select
         v-model="selectPlayers"
@@ -35,33 +35,15 @@
         >查看总排行榜</el-button
       >
     </div>
-    <div
-      class="content"
-      v-if="players.length !== 0"
-    >
+    <div class="content" v-if="players.length !== 0">
       <el-row :gutter="20">
         <el-col :span="12">
-          <el-table
-            :data="playersSort"
-            stripe
-            style="width: 100%"
-          >
-            <el-table-column
-              prop="seatNum"
-              label="座位号"
-              width="80"
-            >
+          <el-table :data="playersSort" stripe style="width: 100%">
+            <el-table-column prop="seatNum" label="座位号" width="80">
             </el-table-column>
-            <el-table-column
-              prop="name"
-              label="玩家"
-              width="200"
-            >
+            <el-table-column prop="name" label="玩家" width="200">
             </el-table-column>
-            <el-table-column
-              prop="chips"
-              label="剩余筹码"
-            >
+            <el-table-column prop="chips" label="剩余筹码">
               <template slot-scope="scope">
                 <el-input
                   v-model="scope.row.chips"
@@ -74,14 +56,8 @@
               </template>
             </el-table-column>
           </el-table>
-          <div
-            class="account-button"
-            v-if="this.playersSort.length !== 0"
-          >
-            <el-button
-              type="primary"
-              round
-              @click="settleAccount"
+          <div class="account-button" v-if="this.playersSort.length !== 0">
+            <el-button type="primary" round @click="settleAccount"
               >结算本局</el-button
             >
             <el-switch
@@ -101,20 +77,9 @@
             >
               <span>今日排行榜</span>
             </div>
-            <el-table
-              :data="players"
-              style="width: 100%"
-            >
-              <el-table-column
-                type="index"
-                width="50"
-              >
-              </el-table-column>
-              <el-table-column
-                prop="name"
-                label="玩家"
-                width="180"
-              >
+            <el-table :data="players" style="width: 100%">
+              <el-table-column type="index" width="50"> </el-table-column>
+              <el-table-column prop="name" label="玩家" width="180">
               </el-table-column>
               <el-table-column
                 prop="score"
@@ -134,11 +99,7 @@
                 :formatter="formatterState"
               >
               </el-table-column>
-              <el-table-column
-                prop="score"
-                label="积分"
-              >
-              </el-table-column>
+              <el-table-column prop="score" label="积分"> </el-table-column>
             </el-table>
           </el-card>
         </el-col>
@@ -161,11 +122,7 @@
           <el-divider></el-divider>
         </div>
       </template>
-      <el-result
-        v-else
-        icon="info"
-        title="无需转账操作"
-      ></el-result>
+      <el-result v-else icon="info" title="无需转账操作"></el-result>
     </el-drawer>
     <el-drawer
       title="我是标题"
@@ -181,20 +138,9 @@
         >
           <span>总排行榜</span>
         </div>
-        <el-table
-          :data="allPlayers"
-          style="width: 100%"
-        >
-          <el-table-column
-            type="index"
-            width="50"
-          >
-          </el-table-column>
-          <el-table-column
-            prop="name"
-            label="玩家"
-            width="180"
-          >
+        <el-table :data="allPlayers" style="width: 100%">
+          <el-table-column type="index" width="50"> </el-table-column>
+          <el-table-column prop="name" label="玩家" width="180">
           </el-table-column>
           <el-table-column
             prop="score"
@@ -214,19 +160,15 @@
             :formatter="formatterState"
           >
           </el-table-column>
-          <el-table-column
-            prop="score"
-            label="积分"
-          >
-          </el-table-column>
+          <el-table-column prop="score" label="积分"> </el-table-column>
         </el-table>
       </el-card>
     </el-drawer>
   </div>
 </template>
 <script>
-import { Player } from '../core/Player';
-import { cloneDeep } from 'lodash-es';
+import { Player } from "../core/Player";
+import { cloneDeep } from "lodash-es";
 
 export default {
   data() {
@@ -241,12 +183,21 @@ export default {
       humaneModel: false,
       isPlaying: false,
       scoreboardDrawer: false,
-      allPlayers: JSON.parse(localStorage.getItem('allPlayers')),
+      allPlayers: JSON.parse(localStorage.getItem("allPlayers")),
     };
   },
   created() {
-    const defaultPlayersName = ['沙河彭于晏', '三哥', '老陈', '闹闹', '洋洋', '小聪明'];
-    const playersName = this.allPlayers ? this.allPlayers.map((player) => player.name) : [];
+    const defaultPlayersName = [
+      "沙河彭于晏",
+      "三哥",
+      "老陈",
+      "闹闹",
+      "洋洋",
+      "小聪明",
+    ];
+    const playersName = this.allPlayers
+      ? this.allPlayers.map((player) => player.name)
+      : [];
     this.playerOptions = new Set([...playersName, ...defaultPlayersName]);
   },
   methods: {
@@ -271,17 +222,21 @@ export default {
     },
     resetSeat() {
       if (this.selectPlayers.length === 0) {
-        this.$message.warning('请先选择玩家');
+        this.$message.warning("请先选择玩家");
         return;
       }
       this.playersSort = [];
       this.isPlaying = true;
       this.confirmPlayers(this.players);
       // 生成一个随机数组
-      const randomArr = this.shuffle(this.selectPlayers.map((item, index) => index + 1));
+      const randomArr = this.shuffle(
+        this.selectPlayers.map((item, index) => index + 1)
+      );
 
       this.selectPlayers.forEach((playerName, index) => {
-        const player = cloneDeep(this.players).find((p) => p.name == playerName);
+        const player = cloneDeep(this.players).find(
+          (p) => p.name == playerName
+        );
         player.seatNum = randomArr[index]; // 重置座位
         player.chips = this.baseChips; // 重置筹码
         this.playersSort.push(player);
@@ -296,10 +251,10 @@ export default {
         .reduce((a, b) => parseFloat(((a * 100 + b * 100) / 100).toFixed(2)));
       const correctChips = this.baseChips * this.playersSort.length;
       if (inputChips === correctChips) {
-        this.$confirm('结算前请填写好玩家的剩余筹码, 是否继续结算?', '提示', {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          type: 'warning',
+        this.$confirm("结算前请填写好玩家的剩余筹码, 是否继续结算?", "提示", {
+          confirmButtonText: "确定",
+          cancelButtonText: "取消",
+          type: "warning",
         })
           .then(() => {
             this.outputResult(); // 输出转账结果
@@ -308,11 +263,14 @@ export default {
           })
           .catch(() => {});
       } else {
-        const diffChips = ((correctChips * 100 - inputChips * 100) / 100).toFixed(2);
+        const diffChips = (
+          (correctChips * 100 - inputChips * 100) /
+          100
+        ).toFixed(2);
         this.$message.error(
-          `输入的剩余筹码总额为${inputChips}，${diffChips > 0 ? '少' : '多'}于总筹码${Math.abs(
-            diffChips
-          )}, 请先确认剩余筹码后再进行结算`
+          `输入的剩余筹码总额为${inputChips}，${
+            diffChips > 0 ? "少" : "多"
+          }于总筹码${Math.abs(diffChips)}, 请先确认剩余筹码后再进行结算`
         );
       }
     },
@@ -321,17 +279,17 @@ export default {
       const winners = [];
       const losers = [];
       this.playersSort.forEach((player) => {
-        player['actualChips'] = parseFloat(
+        player["actualChips"] = parseFloat(
           ((player.chips * 100 - this.baseChips * 100) / 100).toFixed(2)
         );
         if (player.actualChips > 0) {
-          player['result'] = 'win';
+          player["result"] = "win";
           winners.push(cloneDeep(player));
         } else if (player.actualChips < 0) {
-          player['result'] = 'lose';
+          player["result"] = "lose";
           losers.push(cloneDeep(player));
         } else {
-          player['result'] = 'deuce';
+          player["result"] = "deuce";
         }
       });
       this.allot(winners, losers);
@@ -352,7 +310,8 @@ export default {
         return;
       } else {
         const tolerance =
-          Math.abs(winners[0].actualChips) - Math.abs(losers[0].actualChips) <= 0
+          Math.abs(winners[0].actualChips) - Math.abs(losers[0].actualChips) <=
+          0
             ? Math.abs(winners[0].actualChips)
             : Math.abs(losers[0].actualChips); // 转账的公差
         winners[0].actualChips = parseFloat(
@@ -367,7 +326,7 @@ export default {
       }
     },
     handleClose(done) {
-      this.$confirm('确认关闭？')
+      this.$confirm("确认关闭？")
         .then(() => {
           done();
           this.resultInfo = []; // 清空转账消息列表
@@ -397,16 +356,18 @@ export default {
         value.chips = 0;
       }
       value.chips =
-        ('' + value.chips) // 第一步：转成字符串
-          .replace(/[^\d^.]+/g, '') // 第二步：把不是数字，不是小数点的过滤掉
-          .replace(/^0+(\d)/, '$1') // 第三步：第一位0开头，0后面为数字，则过滤掉，取后面的数字
-          .replace(/^\./, '0.') // 第四步：如果输入的第一位为小数点，则替换成 0. 实现自动补全
-          .match(/^\d*(\.?\d{0,2})/g)[0] || ''; // 第五步：最终匹配得到结果 以数字开头，只有一个小数点，而且小数点后面只能有0到2位小数
+        ("" + value.chips) // 第一步：转成字符串
+          .replace(/[^\d^.]+/g, "") // 第二步：把不是数字，不是小数点的过滤掉
+          .replace(/^0+(\d)/, "$1") // 第三步：第一位0开头，0后面为数字，则过滤掉，取后面的数字
+          .replace(/^\./, "0.") // 第四步：如果输入的第一位为小数点，则替换成 0. 实现自动补全
+          .match(/^\d*(\.?\d{0,2})/g)[0] || ""; // 第五步：最终匹配得到结果 以数字开头，只有一个小数点，而且小数点后面只能有0到2位小数
     },
     updateRanking(players) {
       // 更新今日排行榜
       players.forEach((player) => {
-        const currentPlayer = this.playersSort.find((p) => player.name === p.name);
+        const currentPlayer = this.playersSort.find(
+          (p) => player.name === p.name
+        );
         if (currentPlayer) {
           // 计算今日累计得分
           const playerActualChips = currentPlayer.actualChips;
@@ -416,7 +377,7 @@ export default {
           // 计算今日胜负结果
           player.raceResult[currentPlayer.result]++;
           // 计算连胜状态，出现deuce状态时, 保持上一次状态不变
-          if (currentPlayer.result !== 'deuce') {
+          if (currentPlayer.result !== "deuce") {
             if (currentPlayer.result === player.lastState) {
               player.stateTimes++;
             } else {
@@ -432,24 +393,25 @@ export default {
       // 更新总排行榜
       if (!this.allPlayers) {
         // 本地没有任何数据时
-        this.allPlayers = this.players;
-        localStorage.setItem('allPlayers', JSON.stringify(this.players));
+        this.allPlayers = cloneDeep(this.players);
+        localStorage.setItem("allPlayers", JSON.stringify(this.players));
       } else {
         this.confirmPlayers(this.allPlayers);
         this.updateRanking(this.allPlayers);
-        localStorage.setItem('allPlayers', JSON.stringify(this.allPlayers));
+        localStorage.setItem("allPlayers", JSON.stringify(this.allPlayers));
       }
     },
     formatterResult(row) {
       return `${row.raceResult.win} / ${row.raceResult.lose}`;
     },
     formatterWinRate(row) {
-      const total = row.raceResult.win + row.raceResult.lose + row.raceResult.deuce;
+      const total =
+        row.raceResult.win + row.raceResult.lose + row.raceResult.deuce;
       const rate = total && ((row.raceResult.win / total) * 100).toFixed(1);
       return `${rate}%`;
     },
     formatterState(row) {
-      return `${row.stateTimes}连${row.lastState === 'lose' ? '败' : '胜'}`;
+      return `${row.stateTimes}连${row.lastState === "lose" ? "败" : "胜"}`;
     },
   },
 };

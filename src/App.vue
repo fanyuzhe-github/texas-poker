@@ -5,10 +5,10 @@
 </template>
 
 <script>
-import GameDetail from './components/GameDetail.vue';
+import GameDetail from "./components/GameDetail.vue";
 
 export default {
-  name: 'App',
+  name: "App",
   components: {
     GameDetail,
   },
@@ -20,3 +20,4 @@ export default {
 </script>
 
 <style></style>
+default.
