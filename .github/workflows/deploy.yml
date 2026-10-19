@@ -1,0 +1,51 @@
+# 当 master 分支有 push、或在 Actions 页面手动触发时，build 出 dist/ 并发布到 GitHub Pages
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# 需要 Pages 写入权限才能部署；concurrent 保证旧部署被新部署取消
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 17+ 用旧 webpack 必须加 --openssl-legacy-provider；
+      # 锁 Node 20，避免 CI 默认版本漂移把构建搞挂
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run build
+        env:
+          NODE_OPTIONS: --openssl-legacy-provider
+
+      # 上传构建产物到 artifact，给下游 deploy job 用
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

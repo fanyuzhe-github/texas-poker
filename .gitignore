@@ -25,3 +25,6 @@ pnpm-debug.log*
 # 本地工作产物：浏览器截图/预览（可随时重跑生成）、过期卡面素材
 .workbuddy/preview/
 .workbuddy/legacy-cards-sprite96/
+
+# 公开仓库排除项：测试数据含真实朋友昵称战绩，不入库
+.workbuddy/testdata/
