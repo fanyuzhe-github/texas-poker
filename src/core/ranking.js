@@ -13,11 +13,16 @@ import { toCents, fromCents } from "./money";
  *
  * @param {Array} players 排行榜玩家列表
  * @param {Array<{name, delta, result}>} records 本局结果
+ * @param {{at?: number}} [options] at 用于指定本局时间戳（重放历史时用局的 time，
+ *        好让结果可复现）；不给就用当前时间。
  * @returns {Array} 按积分降序排列的新数组
  */
-export function applyOutcome(players, records) {
+export function applyOutcome(players, records, options) {
   const list = Array.isArray(players) ? players : [];
   const outcomes = Array.isArray(records) ? records : [];
+  const opts = options && typeof options === "object" ? options : {};
+  // 同一局的落库时间戳必须一致，重放历史时才算得准「谁是最新的战绩来源」
+  const at = Number.isFinite(opts.at) ? opts.at : Date.now();
 
   const next = list.map((player) => {
     const record = outcomes.find((item) => item.name === player.name);
@@ -46,11 +51,70 @@ export function applyOutcome(players, records) {
       lastState,
       stateTimes,
       // 供 buildMainRanking 判断谁是最新的战绩来源
-      raceDate: Date.now(),
+      raceDate: at,
     };
   });
 
   return next.sort((a, b) => b.score - a.score);
+}
+
+/**
+ * 战绩重放：把一批流水从零重新累计到名册上，得到一份「只反映这些流水」的玩家表。
+ *
+ * 用途是修数据 —— 删除某一局、清空流水之后，必须让总榜跟着回滚，
+ * 否则积分/场次/连胜会继续按「已经不存在的流水」算，而且无法自愈。
+ * 增量累加（applyOutcome）只能往前推，做不到往回退，所以只能整体重放。
+ *
+ * ⚠️ 只重建**战绩字段**（score / raceResult / lastState / stateTimes / raceDate），
+ *    其余字段（头像、归属 parent、是否主账号、排序号）原样保留。
+ * ⚠️ 流水里出现过、但名册里已经没有的账号会被忽略 —— 玩家删了战绩就作废。
+ * ⚠️ 名册里从没上过桌的账号会保留下来，战绩归零。
+ *
+ * @param {Array} history 流水（任意顺序，内部按 time 升序重放）
+ * @param {Array} players 名册
+ * @param {{filter?: (game) => boolean}} [options] filter 用于只重放部分流水
+ *        （今日榜只认当天打的局）
+ * @returns {Array} 按积分降序排列的新数组
+ */
+export function rebuildPlayersFromHistory(history, players, options) {
+  const opts = options && typeof options === "object" ? options : {};
+  const keep = typeof opts.filter === "function" ? opts.filter : null;
+  const games = (Array.isArray(history) ? history : [])
+    .filter((game) => game && Array.isArray(game.records))
+    .filter((game) => !keep || keep(game) === true)
+    .slice()
+    .sort((a, b) => toInt(a.time) - toInt(b.time));
+
+  const roster = Array.isArray(players) ? players : [];
+  const names = new Set(roster.map((player) => player.name));
+
+  let next = roster.map(resetRaceStats);
+
+  games.forEach((game) => {
+    const records = game.records
+      .filter((record) => record && names.has(record.name))
+      .map((record) => ({
+        name: record.name,
+        delta: record.delta,
+        result: VALID_RESULTS.has(record.result) ? record.result : "deuce",
+      }));
+    if (!records.length) return;
+    next = applyOutcome(next, records, { at: toInt(game.time) });
+  });
+
+  return next;
+}
+
+/** 把一个账号的战绩清零，其余字段保留 */
+function resetRaceStats(player) {
+  return {
+    ...player,
+    score: 0,
+    raceResult: { win: 0, lose: 0, deuce: 0 },
+    lastState: "deuce",
+    stateTimes: 0,
+    raceDate: 0,
+  };
 }
 
 /** 取某个主账号名下的子账号列表 */
@@ -264,6 +328,9 @@ export function ensurePlayers(ranking, names, createPlayer) {
 
   return list;
 }
+
+/** 合法的胜负判定，重放流水时用来挡脏数据 */
+const VALID_RESULTS = new Set(["win", "lose", "deuce"]);
 
 function toInt(value) {
   const n = Number(value);

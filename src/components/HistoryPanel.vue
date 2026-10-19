@@ -123,18 +123,22 @@ export default {
       }
     },
     handleRemove(game) {
-      this.$confirm("删除后无法恢复，确认删除这一局？", "提示", {
-        type: "warning",
-      })
+      this.$confirm(
+        "删除后无法恢复，该局计入的积分/场次会同步回滚，确认删除这一局？",
+        "提示",
+        { type: "warning" }
+      )
         .then(() => {
           this.$emit("remove", game.id);
         })
         .catch(() => {});
     },
     handleClear() {
-      this.$confirm("将清空全部对局流水（排行榜积分不受影响），确认？", "提示", {
-        type: "warning",
-      })
+      this.$confirm(
+        "将清空全部对局流水，排行榜积分会同步归零（建议先导出备份），确认？",
+        "提示",
+        { type: "warning" }
+      )
         .then(() => {
           this.$emit("clear");
         })

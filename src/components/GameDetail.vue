@@ -615,6 +615,7 @@ import {
   selectableNames,
   mainOf,
   limitOnePerMain,
+  rebuildPlayersFromHistory,
 } from "../core/ranking";
 import {
   loadPlayers,
@@ -627,6 +628,7 @@ import {
   saveCards,
   migrate,
   STORAGE_KEYS,
+  todayKey,
 } from "../core/storage";
 import { buildAchievements } from "../core/achievements";
 import { buildNewRecords } from "../core/records";
@@ -1509,15 +1511,39 @@ export default {
     },
 
     removeHistoryGame(id) {
-      this.history = this.history.filter((game) => game.id !== id);
+      const next = this.history.filter((game) => game.id !== id);
+      if (next.length === this.history.length) return;
+      this.history = next;
       saveHistory(this.history);
-      this.$message.success("已删除该局记录");
+      this.rebuildRankings();
+      this.$message.success("已删除该局记录，相关战绩已同步回滚");
     },
 
     clearHistory() {
       this.history = [];
       saveHistory(this.history);
-      this.$message.success("对局流水已清空");
+      this.rebuildRankings();
+      this.$message.success("对局流水已清空，全部战绩已归零");
+    },
+
+    /**
+     * 流水变动后，让排行榜跟着回到「只反映现存流水」的状态。
+     *
+     * 增量累加（applyOutcome）只能往前推，删/清流水时没法往回退，
+     * 只能从第一条流水整体重放 —— 否则总榜、段位、记录榜、勋章墙
+     * 会继续按已经不存在的牌局算账，而且永远修不回来。
+     *
+     * ⚠️ 今日榜只重放**当天**的流水，不然删一局旧账会把今天的分也一起冲掉。
+     */
+    rebuildRankings() {
+      const today = todayKey();
+      this.allPlayers = rebuildPlayersFromHistory(this.history, this.allPlayers);
+      this.players = rebuildPlayersFromHistory(this.history, this.players, {
+        filter: (game) => todayKey(Number(game.time) || 0) === today,
+      });
+      if (!savePlayers(this.allPlayers)) {
+        this.$message.error("排行榜保存到本地失败，可能是存储空间已满");
+      }
     },
 
     handleRename({ oldName, newName }) {
