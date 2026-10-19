@@ -551,6 +551,58 @@
           </div>
         </el-form-item>
 
+        <el-form-item label="实时同步">
+          <template v-if="cloud && cloud.liveEnabled">
+            <div class="cloud-status">
+              <i class="el-icon-success"></i>
+              <span>已连接，换设备打开就是最新数据</span>
+            </div>
+            <div class="form-tip">
+              房间：{{ cloud.room }} · 上次同步：{{
+                cloud.liveLastSyncAt ? formatCloudTime(cloud.liveLastSyncAt) : "刚连上"
+              }}
+            </div>
+            <div class="backup-actions cloud-actions">
+              <el-button
+                size="small"
+                icon="el-icon-refresh"
+                :loading="liveBusy"
+                @click="handleSyncLiveNow"
+                >立即同步</el-button
+              >
+              <el-button size="small" icon="el-icon-circle-close" @click="handleDisconnectLive"
+                >断开</el-button
+              >
+            </div>
+          </template>
+          <template v-else>
+            <el-input
+              v-model="liveForm.endpoint"
+              size="small"
+              placeholder="同步服务地址，如 https://xxx.deno.dev"
+            ></el-input>
+            <el-input
+              v-model="liveForm.room"
+              size="small"
+              placeholder="房间码（4~64 位字母数字）"
+              style="margin-top: 8px"
+            >
+              <el-button slot="append" @click="handleRandomRoom">随机</el-button>
+            </el-input>
+            <div class="backup-actions cloud-actions">
+              <el-button size="small" :loading="liveBusy" @click="handleTestLive"
+                >测试连接</el-button
+              >
+              <el-button size="small" type="primary" :loading="liveBusy" @click="handleConnectLive"
+                >连接并同步</el-button
+              >
+            </div>
+          </template>
+          <div class="form-tip">
+            两台设备填同一个地址和房间码，数据自动保持一致；服务免费且不会休眠
+          </div>
+        </el-form-item>
+
         <el-form-item label="云备份">
           <template v-if="cloud && cloud.token">
             <div class="cloud-status">
@@ -685,6 +737,15 @@ import {
 } from "../core/storage";
 import { buildSnapshot, parseSnapshot, decideSync, isSnapshotTooBig } from "../core/sync";
 import { createGist, updateGist, fetchGist } from "../utils/gist";
+import {
+  normalizeEndpoint,
+  isValidRoom,
+  randomRoom,
+  pingEndpoint,
+  fetchState,
+  pushState,
+  subscribeState,
+} from "../utils/live";
 import { buildAchievements } from "../core/achievements";
 import { buildNewRecords } from "../core/records";
 import { tierLabel, tierTone, tierTip } from "../core/tier";
@@ -764,6 +825,9 @@ export default {
       avatarPickerName: "", // 正在给谁换头像
       cloud: null, // 云备份配置（token / gistId / 上次同步），只在本机
       cloudBusy: false, // 正在上传或下载，防重复点击
+      liveForm: { endpoint: "", room: "" }, // 实时同步表单
+      liveBusy: false,
+      liveUnsubscribe: null, // SSE 关闭函数，非响应式
       cloudForm: { token: "" }, // 设置弹窗里的 token 输入框
     };
   },
@@ -912,6 +976,14 @@ export default {
     this.daily = loadDaily();
     this.cloud = loadCloud();
     this.refreshPlayerOptions();
+    this.liveForm = { endpoint: this.cloud.endpoint || "", room: this.cloud.room || "" };
+    if (this.cloud.liveEnabled && this.cloud.endpoint && this.cloud.room) {
+      this.syncLiveOnStart();
+      this.startLiveWatch();
+    }
+  },
+  beforeDestroy() {
+    this.stopLiveWatch();
   },
   methods: {
     format,
@@ -1343,6 +1415,7 @@ export default {
       // 战绩、名册、卡包此时都已落盘，静默推一份到云端。
       // 这一步在结算流程最末尾，成功与否都不影响本局结果。
       this.autoBackupToCloud();
+      this.pushLiveSnapshot(false, true);
     },
 
     /**
@@ -1870,6 +1943,190 @@ export default {
           this.cloud = loadCloud();
           this.cloudForm = { token: "" };
           this.$message.success("已断开云备份");
+        })
+        .catch(() => {});
+    },
+
+    handleRandomRoom() {
+      this.liveForm.room = randomRoom();
+    },
+
+    async handleTestLive() {
+      const endpoint = normalizeEndpoint(this.liveForm.endpoint);
+      if (!endpoint) {
+        this.$message.warning("先填同步服务地址");
+        return;
+      }
+      this.liveBusy = true;
+      try {
+        const result = await pingEndpoint(endpoint);
+        if (result.ok) this.$message.success("服务地址可用");
+        else this.$message.error(result.reason || "连不上同步服务");
+      } finally {
+        this.liveBusy = false;
+      }
+    },
+
+    /** 写云端配置的小工具，保证每次都基于最新的本机配置 */
+    patchCloud(patch) {
+      this.cloud = { ...loadCloud(), ...patch };
+      saveCloud(this.cloud);
+      return this.cloud;
+    },
+
+    /** 连接：先探云端有没有数据，再决定拉还是推 */
+    async handleConnectLive() {
+      const endpoint = normalizeEndpoint(this.liveForm.endpoint);
+      const room = String(this.liveForm.room || "").trim();
+      if (!endpoint) {
+        this.$message.warning("先填同步服务地址");
+        return;
+      }
+      if (!isValidRoom(room)) {
+        this.$message.warning("房间码 4~64 位，只能用字母、数字、下划线和短横线");
+        return;
+      }
+      if (this.liveBusy) return;
+
+      this.liveBusy = true;
+      let remote = null;
+      try {
+        const result = await fetchState(endpoint, room);
+        if (!result.ok) {
+          this.$message.error(result.reason || "读取云端数据失败");
+          return;
+        }
+        remote = result.snapshot;
+      } finally {
+        this.liveBusy = false;
+      }
+
+      this.patchCloud({ endpoint, room });
+
+      if (!remote) {
+        const ok = await this.pushLiveSnapshot(false, false);
+        if (ok) {
+          this.patchCloud({ liveEnabled: true });
+          this.startLiveWatch();
+          this.$message.success("已连接，本机数据已上传到云端");
+        }
+        return;
+      }
+
+      // 换设备时本机基线是 0，云端必定更新 —— 一律先问再做
+      const action = decideSync(this.cloud.liveSyncedUpdatedAt || 0, remote.updatedAt);
+      if (action === "download") {
+        const when = this.formatCloudTime(remote.updatedAt);
+        this.$confirm(
+          `云端有更新的数据（${when}），将用它覆盖本机，本机上未同步的改动会丢失。`,
+          "发现云端数据",
+          { confirmButtonText: "用云端的", cancelButtonText: "取消", type: "warning" }
+        )
+          .then(() => {
+            this.applySnapshot(remote);
+            this.patchCloud({
+              liveEnabled: true,
+              liveSyncedUpdatedAt: remote.updatedAt,
+              liveLastSyncAt: Date.now(),
+            });
+            this.startLiveWatch();
+            this.$message.success("已连接，本机已同步到最新");
+          })
+          .catch(() => {});
+        return;
+      }
+
+      const ok = await this.pushLiveSnapshot(true, false);
+      if (ok) {
+        this.patchCloud({ liveEnabled: true });
+        this.startLiveWatch();
+        this.$message.success("已连接，本机数据已上传");
+      }
+    },
+
+    /**
+     * 推一份快照到云端。
+     * @param {boolean} force true 时以本机为准，覆盖云端更新的数据
+     * @param {boolean} silent true 时成功不弹提示（结算后自动同步用）
+     */
+    async pushLiveSnapshot(force, silent) {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.endpoint || !cloud.room) return false;
+      this.liveBusy = true;
+      try {
+        const snapshot = this.takeSnapshot();
+        const result = await pushState(cloud.endpoint, cloud.room, snapshot, force);
+        if (!result.ok) {
+          const text = result.reason || "同步失败";
+          if (silent) this.$message.warning(`云端同步未成功：${text}`);
+          else this.$message.error(text);
+          return false;
+        }
+        this.patchCloud({ liveLastSyncAt: Date.now(), liveSyncedUpdatedAt: snapshot.updatedAt });
+        if (!silent) this.$message.success("已同步到云端");
+        return true;
+      } finally {
+        this.liveBusy = false;
+      }
+    },
+
+    handleSyncLiveNow() {
+      this.pushLiveSnapshot(true, false);
+    },
+
+    /** 换设备后打开页面：云端更新就静默跟上，否则推一次 */
+    async syncLiveOnStart() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.endpoint || !cloud.room) return;
+      const result = await fetchState(cloud.endpoint, cloud.room);
+      if (!result.ok || !result.snapshot) return;
+      const remote = result.snapshot;
+      if (remote.updatedAt <= (cloud.liveSyncedUpdatedAt || 0)) {
+        this.pushLiveSnapshot(false, true);
+        return;
+      }
+      this.applySnapshot(remote);
+      this.patchCloud({ liveSyncedUpdatedAt: remote.updatedAt, liveLastSyncAt: Date.now() });
+    },
+
+    startLiveWatch() {
+      this.stopLiveWatch();
+      const cloud = this.cloud;
+      if (!cloud || !cloud.endpoint || !cloud.room) return;
+      this.liveUnsubscribe = subscribeState(cloud.endpoint, cloud.room, {
+        onSnapshot: (snapshot) => {
+          if (this.settling) return; // 结算动画期间不打断
+          // 只采纳比本机基线新的，自己刚推上去的那份会被这里滤掉
+          if (snapshot.updatedAt <= (this.cloud.liveSyncedUpdatedAt || 0)) return;
+          this.applySnapshot(snapshot);
+          this.patchCloud({ liveSyncedUpdatedAt: snapshot.updatedAt, liveLastSyncAt: Date.now() });
+          this.$notify({
+            title: "已同步",
+            message: "另一台设备更新了数据，本机已跟上",
+            type: "success",
+            duration: 2500,
+          });
+        },
+        onError: () => {}, // EventSource 自己会重连，不打扰用户
+      });
+    },
+
+    stopLiveWatch() {
+      if (typeof this.liveUnsubscribe === "function") this.liveUnsubscribe();
+      this.liveUnsubscribe = null;
+    },
+
+    handleDisconnectLive() {
+      this.$confirm(
+        "断开后本机不再自动同步；云端数据会保留，重新填同一个地址和房间码即可接回。",
+        "断开实时同步",
+        { confirmButtonText: "断开", cancelButtonText: "取消", type: "warning" }
+      )
+        .then(() => {
+          this.stopLiveWatch();
+          this.patchCloud({ liveEnabled: false, endpoint: "", room: "" });
+          this.liveForm = { endpoint: "", room: "" };
+          this.$message.success("已断开实时同步");
         })
         .catch(() => {});
     },

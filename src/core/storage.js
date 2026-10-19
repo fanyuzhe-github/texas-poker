@@ -252,6 +252,16 @@ export function normalizeCloud(raw) {
     autoBackup: source.autoBackup !== false,
     /** 上次成功备份时的快照时间，用来和云端比对新旧 */
     syncedUpdatedAt: Number(source.syncedUpdatedAt) || 0,
+
+    /** 实时同步：Deno Deploy 服务地址，形如 https://xxx.deno.dev */
+    endpoint: String(source.endpoint == null ? "" : source.endpoint).trim(),
+    /** 实时同步：房间码，相当于这份数据的名字兼口令 */
+    room: String(source.room == null ? "" : source.room).trim(),
+    /** 实时同步是否已启用（地址+房间码都填了且连通过一次） */
+    liveEnabled: source.liveEnabled === true,
+    liveLastSyncAt: Number(source.liveLastSyncAt) || 0,
+    /** 实时同步上次成功时云端快照的时间 */
+    liveSyncedUpdatedAt: Number(source.liveSyncedUpdatedAt) || 0,
   };
 }
 
