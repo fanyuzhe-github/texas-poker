@@ -131,8 +131,61 @@ export function loadPlayers() {
   });
 }
 
+/* ------------------------------------------------------------------ */
+/* 本地改动广播                                                        */
+/* ------------------------------------------------------------------ */
+
+const changeListeners = new Set();
+let muteDepth = 0;
+
+/**
+ * 订阅「本机数据被改写」。
+ * 实时同步靠它知道该推一次了 —— 逐个操作点去补调用太容易漏，
+ * 所以统一在这层发信号，以后新加的写入点自动生效。
+ *
+ * @param {(kind: string) => void} fn kind 是 players / history / settings / cards
+ * @returns {() => void} 取消订阅
+ */
+export function onLocalChange(fn) {
+  if (typeof fn !== "function") return () => {};
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+/**
+ * 包住「不该触发上传」的本地写入：应用云端快照、从云端恢复。
+ * 不这么做就会把自己刚收下来的数据原样推回去。
+ * ⚠️ 只支持同步回调。
+ *
+ * @template T
+ * @param {() => T} fn
+ * @returns {T}
+ */
+export function muteLocalChange(fn) {
+  muteDepth += 1;
+  try {
+    return fn();
+  } finally {
+    muteDepth = Math.max(0, muteDepth - 1);
+  }
+}
+
+function notifyLocalChange(kind) {
+  if (muteDepth > 0) return;
+  changeListeners.forEach((fn) => {
+    try {
+      fn(kind);
+    } catch (error) {
+      // 订阅方自己炸了，不能连累落盘
+      console.warn("[storage] 本地改动订阅回调出错", error);
+    }
+  });
+}
+
 export function savePlayers(list) {
-  return safeWrite(STORAGE_KEYS.players, Array.isArray(list) ? list : []);
+  const ok = safeWrite(STORAGE_KEYS.players, Array.isArray(list) ? list : []);
+  if (ok) notifyLocalChange("players");
+  return ok;
 }
 
 /** 读取对局历史，按时间倒序返回 */
@@ -158,7 +211,9 @@ export function loadHistory() {
 }
 
 export function saveHistory(list) {
-  return safeWrite(STORAGE_KEYS.history, Array.isArray(list) ? list : []);
+  const ok = safeWrite(STORAGE_KEYS.history, Array.isArray(list) ? list : []);
+  if (ok) notifyLocalChange("history");
+  return ok;
 }
 
 const DEFAULT_SETTINGS = {
@@ -177,11 +232,13 @@ export function loadSettings() {
 }
 
 export function saveSettings(settings) {
-  return safeWrite(STORAGE_KEYS.settings, {
+  const ok = safeWrite(STORAGE_KEYS.settings, {
     ...DEFAULT_SETTINGS,
     ...settings,
     version: SCHEMA_VERSION,
   });
+  if (ok) notifyLocalChange("settings");
+  return ok;
 }
 
 /**
@@ -193,7 +250,9 @@ export function loadCards() {
 }
 
 export function saveCards(state) {
-  return safeWrite(STORAGE_KEYS.cards, normalizeCardState(state));
+  const ok = safeWrite(STORAGE_KEYS.cards, normalizeCardState(state));
+  if (ok) notifyLocalChange("cards");
+  return ok;
 }
 
 /* ------------------------------------------------------------------ */
@@ -253,7 +312,7 @@ export function normalizeCloud(raw) {
     /** 上次成功备份时的快照时间，用来和云端比对新旧 */
     syncedUpdatedAt: Number(source.syncedUpdatedAt) || 0,
 
-    /** 实时同步：Deno Deploy 服务地址，形如 https://xxx.deno.dev */
+    /** 实时同步：Deno Deploy 服务地址，形如 https://xxx.deno.net */
     endpoint: String(source.endpoint == null ? "" : source.endpoint).trim(),
     /** 实时同步：房间码，相当于这份数据的名字兼口令 */
     room: String(source.room == null ? "" : source.room).trim(),

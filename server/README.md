@@ -21,7 +21,7 @@
 1. 打开 <https://dash.deno.com>，**用 GitHub 登录**（免费层不用实名、不用绑卡）
 2. 右上角 **New Project** → 选从 GitHub 部署 → 授权后选中 `texas-poker` 仓库
 3. 入口文件填 `server/main.ts`，其余保持默认，点部署
-4. 部署完成后会得到一个地址，形如 `https://your-project.deno.dev`
+4. 部署完成后会得到一个地址，形如 `https://your-project.deno.net`
 5. 回到应用：**设置 → 实时同步**，粘贴这个地址，填一个房间码（点「随机」按钮生成），点「连接并同步」
 
 第二台设备重复第 5 步，**填同一个地址和同一个房间码**，打开页面就是最新数据。

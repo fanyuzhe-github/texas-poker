@@ -107,6 +107,14 @@ Gist 的麻烦点：token **90 天过期** + 换设备要**手动点恢复** →
 - `storage.js` cloud 新增 `endpoint/room/liveEnabled/liveLastSyncAt/liveSyncedUpdatedAt`
 - `GameDetail.vue`：`handleConnectLive`/`pushLiveSnapshot`/`syncLiveOnStart`/`startLiveWatch`；结算末尾推一次
 - ⚠️ **前端零新 SDK**：fetch + EventSource，bundle 不膨胀（Supabase/云开发要塞上百 KB）
+- ⚠️ **自动上传的开关在 storage.js 的写入口**：`onLocalChange/muteLocalChange`。
+  写操作散落在 25 处 `savePlayers/saveHistory/saveSettings/saveCards` 调用，逐处补同步必漏，
+  所以在这四个函数里统一广播，GameDetail 订阅后 **1200ms 防抖**推一次；
+  刚推过 2 秒内跳过（结算末尾已推过，别重复）。单测 `test-storage-change.js` 17 项
+- ⚠️ **`applySnapshot` 必须包 `muteLocalChange`**：数据就是从云端下来的，再推回去时间戳相同会被
+  服务端拒，白弹一条「同步未成功」告警
+- ⚠️ **`handleWipeData` 要先 force 推一份空快照再刷新**：否则下次连上同一个房间码，
+  旧数据又被当成「更新的」拉回来（清空后 云端还在 就是这个坑）
 - ⚠️ **新版 Deploy EA（console.deno.com）两个硬门槛**（2026-10-20 踩到）：
   1. 仓库有 `package.json` 会被自动猜成「要跑 npm 构建」→ build 直接失败。修法：根目录加 `deno.json`
      写死 `deploy.runtime = {type:"dynamic", entrypoint:"./server/main.ts"}`，**不写 install/build**（源码配置优先于面板）

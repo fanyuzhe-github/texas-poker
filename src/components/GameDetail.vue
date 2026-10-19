@@ -555,7 +555,7 @@
           <template v-if="cloud && cloud.liveEnabled">
             <div class="cloud-status">
               <i class="el-icon-success"></i>
-              <span>已连接，换设备打开就是最新数据</span>
+              <span>已连接，任何改动都会自动同步</span>
             </div>
             <div class="form-tip">
               房间：{{ cloud.room }} · 上次同步：{{
@@ -579,7 +579,7 @@
             <el-input
               v-model="liveForm.endpoint"
               size="small"
-              placeholder="同步服务地址，如 https://xxx.deno.dev"
+              placeholder="同步服务地址，如 https://xxx.deno.net"
             ></el-input>
             <el-input
               v-model="liveForm.room"
@@ -599,7 +599,8 @@
             </div>
           </template>
           <div class="form-tip">
-            两台设备填同一个地址和房间码，数据自动保持一致；服务免费且不会休眠
+            两台设备填同一个地址和房间码，数据自动保持一致；结算、改名、删局、抽卡、改底注都会自动
+            上传，不用手动点。服务免费且不会休眠
           </div>
         </el-form-item>
 
@@ -734,6 +735,8 @@ import {
   migrate,
   STORAGE_KEYS,
   todayKey,
+  onLocalChange,
+  muteLocalChange,
 } from "../core/storage";
 import { buildSnapshot, parseSnapshot, decideSync, isSnapshotTooBig } from "../core/sync";
 import { createGist, updateGist, fetchGist } from "../utils/gist";
@@ -828,6 +831,8 @@ export default {
       liveForm: { endpoint: "", room: "" }, // 实时同步表单
       liveBusy: false,
       liveUnsubscribe: null, // SSE 关闭函数，非响应式
+      livePushTimer: null, // 本地改动后的防抖上传定时器，非响应式
+      offLocalChange: null, // 取消订阅本地改动
       cloudForm: { token: "" }, // 设置弹窗里的 token 输入框
     };
   },
@@ -981,9 +986,13 @@ export default {
       this.syncLiveOnStart();
       this.startLiveWatch();
     }
+    // 任何一处本地写入都会走到这里，改名、删局、抽卡、改底注都能自动跟上云端
+    this.offLocalChange = onLocalChange(() => this.scheduleLivePush());
   },
   beforeDestroy() {
     this.stopLiveWatch();
+    this.clearLivePushTimer();
+    if (typeof this.offLocalChange === "function") this.offLocalChange();
   },
   methods: {
     format,
@@ -1756,7 +1765,22 @@ export default {
      * 只留底注设置，其余键整体抹掉后直接刷新页面 —— 内存里还有一堆派生状态
      * （今日榜 / 选人 / 卡包 / 奖券），逐个重置容易漏，刷新最干净。
      */
-    handleWipeData() {
+    async handleWipeData() {
+      // 开了实时同步就得把云端那份也抹掉，
+      // 否则下次连上同一个房间码，旧数据又被当成「更新的」拉回来
+      const cloud = this.cloud;
+      if (cloud && cloud.liveEnabled && cloud.endpoint && cloud.room) {
+        const empty = buildSnapshot({
+          players: [],
+          history: [],
+          settings: this.settings,
+          cards: {},
+        });
+        const pushed = await pushState(cloud.endpoint, cloud.room, empty, true);
+        if (!pushed.ok) {
+          this.$message.warning(`云端那份没能清空：${pushed.reason || "同步失败"}`);
+        }
+      }
       Object.values(STORAGE_KEYS).forEach((key) => {
         if (key === STORAGE_KEYS.settings) return;
         window.localStorage.removeItem(key);
@@ -1800,16 +1824,19 @@ export default {
 
     /** 把云端存档写回本机，并立刻落盘 + 刷新界面 */
     applySnapshot(snapshot) {
-      this.allPlayers = snapshot.players;
-      this.history = snapshot.history;
-      this.settings = snapshot.settings;
-      this.cardState = snapshot.cards;
-      savePlayers(this.allPlayers);
-      saveHistory(this.history);
-      saveSettings(this.settings);
-      saveCards(this.cardState);
-      this.settingsForm = { ...this.settings };
-      this.refreshPlayerOptions();
+      // 数据就是从云端下来的，别再推回去 —— 时间戳相同会被服务端拒，白弹一条告警
+      muteLocalChange(() => {
+        this.allPlayers = snapshot.players;
+        this.history = snapshot.history;
+        this.settings = snapshot.settings;
+        this.cardState = snapshot.cards;
+        savePlayers(this.allPlayers);
+        saveHistory(this.history);
+        saveSettings(this.settings);
+        saveCards(this.cardState);
+        this.settingsForm = { ...this.settings };
+        this.refreshPlayerOptions();
+      });
     },
 
     /**
@@ -2114,6 +2141,30 @@ export default {
     stopLiveWatch() {
       if (typeof this.liveUnsubscribe === "function") this.liveUnsubscribe();
       this.liveUnsubscribe = null;
+    },
+
+    /**
+     * 本地改了数据 → 排队上传。
+     * 一局结算里会连续写好几次盘（名册、流水、卡包），防抖合并成一次请求。
+     * 刚推过就跳过：结算末尾已经推过一次，别再重复。
+     */
+    scheduleLivePush() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
+      this.clearLivePushTimer();
+      this.livePushTimer = setTimeout(() => {
+        this.livePushTimer = null;
+        // 结算末尾那次推送刚完成，这次就免了，省一次往返
+        if (Date.now() - (this.cloud.liveLastSyncAt || 0) < 2000) return;
+        this.pushLiveSnapshot(false, true);
+      }, 1200);
+    },
+
+    clearLivePushTimer() {
+      if (this.livePushTimer) {
+        clearTimeout(this.livePushTimer);
+        this.livePushTimer = null;
+      }
     },
 
     handleDisconnectLive() {
