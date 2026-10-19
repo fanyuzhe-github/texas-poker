@@ -1,0 +1,292 @@
+/**
+ * 排行榜累计逻辑：与结算解耦，纯函数。
+ */
+import { toCents, fromCents } from "./money";
+
+/**
+ * 把一局的结果累计到排行榜上（不修改入参，返回新数组）。
+ *
+ * 重要：这里只把战绩记在实际参与牌局的账号（子账号 / 独立玩家）头上，
+ * **不往主账号上累加**。主账号的汇总积分一律由 buildMainRanking 在展示时
+ * 实时算出。若两边都累加，胜负场次和积分会翻倍。
+ * 这样设计的好处是子账号解除归属后，主账号的汇总值立刻自动正确，无需回滚。
+ *
+ * @param {Array} players 排行榜玩家列表
+ * @param {Array<{name, delta, result}>} records 本局结果
+ * @returns {Array} 按积分降序排列的新数组
+ */
+export function applyOutcome(players, records) {
+  const list = Array.isArray(players) ? players : [];
+  const outcomes = Array.isArray(records) ? records : [];
+
+  const next = list.map((player) => {
+    const record = outcomes.find((item) => item.name === player.name);
+    if (!record) return { ...player };
+
+    const raceResult = {
+      win: toInt(player.raceResult && player.raceResult.win),
+      lose: toInt(player.raceResult && player.raceResult.lose),
+      deuce: toInt(player.raceResult && player.raceResult.deuce),
+    };
+    raceResult[record.result] = (raceResult[record.result] || 0) + 1;
+
+    let lastState = player.lastState || "deuce";
+    let stateTimes = toInt(player.stateTimes);
+
+    // 平局不改变连胜/连败状态
+    if (record.result !== "deuce") {
+      stateTimes = record.result === lastState ? stateTimes + 1 : 1;
+      lastState = record.result;
+    }
+
+    return {
+      ...player,
+      score: fromCents(toCents(player.score) + toCents(record.delta)),
+      raceResult,
+      lastState,
+      stateTimes,
+      // 供 buildMainRanking 判断谁是最新的战绩来源
+      raceDate: Date.now(),
+    };
+  });
+
+  return next.sort((a, b) => b.score - a.score);
+}
+
+/** 取某个主账号名下的子账号列表 */
+export function childrenOf(players, mainName) {
+  const list = Array.isArray(players) ? players : [];
+  return list.filter((player) => player.parent === mainName);
+}
+
+/**
+ * 分组容器：名下挂着子账号的顶层账号。
+ * ⚠️ 现在只用于展示判断（列表里标几个子账号），**不再用来限制上桌** ——
+ *    主账号自己要下场打一局是允许的。
+ */
+export function isGroupOnly(player, players) {
+  return !player.parent && childrenOf(players, player.name).length > 0;
+}
+
+/**
+ * 显式创建的主账号：名下可以有子账号，也可以暂时一个都没有。
+ * 注意与「独立号」区分 —— 独立号同样是顶层账号（parent 为空），
+ * 但它没有被标记成主账号。
+ */
+export function isMainAccount(player) {
+  return !player.parent && player.isMain === true;
+}
+
+/**
+ * 可上桌的账号名：**名册里的账号一律可上桌**，主账号也能自己下场。
+ *
+ * 主账号亲自上桌时战绩记在自己头上，总榜汇总（自身 + 子账号）天然包含这部分，
+ * 不存在重复计算 —— 见 buildMainRanking 的 members = [main, ...children]。
+ *
+ * 「同一个主账号一局只能出一个号」交给 limitOnePerMain：
+ * 主账号和它的子账号算同一组，同时选中时只保留最后选的那个，避免左右互搏。
+ */
+export function selectableNames(players) {
+  const list = Array.isArray(players) ? players : [];
+  return list.map((player) => player.name);
+}
+
+/**
+ * 今日榜：直接按「今天上桌的号」排名 —— 子账号就是子账号，独立号就是独立号，
+ * 不做主账号归集，谁坐在桌前就显示谁。
+ * 战绩本来就是记在实际账号头上（见 applyOutcome），这里只排序，不存在翻倍。
+ *
+ * @param {Array} players 今日榜累计列表
+ * @param {Array} [roster] 总库，用来剔除历史遗留的主账号脏数据
+ * @returns {Array} 按积分降序排列
+ */
+export function buildTodayRanking(players, roster) {
+  const list = Array.isArray(players) ? players : [];
+  const base = Array.isArray(roster) && roster.length ? roster : list;
+
+  return list
+    .filter((player) => {
+      const ref = base.find((item) => item.name === player.name) || player;
+      // 主账号默认不进今日榜（历史脏数据兜底）；
+      // 但只要它今天真下了场 —— 看**今日榜这一行自己**的战绩，一律保留
+      return !isMainAccount(ref) || totalGames(player) > 0;
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+function totalGames(player) {
+  const result = player.raceResult || {};
+  return (
+    toInt(result.win) + toInt(result.lose) + toInt(result.deuce)
+  );
+}
+
+/**
+ * 今日结算的领奖台：取今日榜前三名。
+ * 展示顺序按领奖台惯例排成「亚军 - 冠军 - 季军」（冠军在中间最高），
+ * 不足三人时缺哪位就少哪位，绝不硬凑。
+ *
+ * @param {Array} ranking 今日榜（已按积分降序）
+ * @param {Array} [roster] 总库，用来把上桌的子账号归到主账号名下领奖
+ * @returns {Array<{rank, name, owner, parent, score, games, win, lose, deuce}>}
+ */
+export function buildDailyPodium(ranking, roster) {
+  const list = Array.isArray(ranking) ? ranking : [];
+  const players = Array.isArray(roster) && roster.length ? roster : list;
+
+  const top = list.slice(0, 3).map((player, index) => {
+    const result = player.raceResult || {};
+    return {
+      rank: index + 1,
+      name: player.name,
+      // 卡包挂在主账号名下，子账号上台领奖也是发给它的主人
+      owner: mainOf(players, player.name) || player.name,
+      parent: player.parent || null,
+      // 透传给领奖台上的头像组件，脏值由它那边清洗
+      avatar: typeof player.avatar === "string" ? player.avatar : "",
+      score: toInt(player.score),
+      games: totalGames(player),
+      win: toInt(result.win),
+      lose: toInt(result.lose),
+      deuce: toInt(result.deuce),
+    };
+  });
+
+  return [top[1], top[0], top[2]].filter(Boolean);
+}
+
+/**
+ * 某个账号归属的主账号名。
+ * 自己就是主账号时返回自己，查不到（还没入库）时也返回自己。
+ */
+export function mainOf(players, name) {
+  const list = Array.isArray(players) ? players : [];
+  const player = list.find((item) => item.name === name);
+  if (!player || !player.parent) return name;
+  return player.parent;
+}
+
+/**
+ * 同一个主账号（它自己 + 名下所有子账号）在牌桌上只能出一个号，
+ * 否则就是同一个人左右互搏，结算出来的转账方案没有意义。
+ *
+ * 保留**最后**被选中的那个（用户最新的意图），把同组的其他号剔除，
+ * 其余选择保持原有顺序，避免座位顺序被打乱。
+ */
+export function limitOnePerMain(players, selectedNames) {
+  const list = Array.isArray(players) ? players : [];
+  const names = Array.isArray(selectedNames) ? selectedNames.filter(Boolean) : [];
+
+  const kept = [];
+  for (let i = names.length - 1; i >= 0; i -= 1) {
+    const name = names[i];
+    const group = mainOf(list, name);
+    if (kept.some((item) => mainOf(list, item) === group)) continue;
+    kept.unshift(name);
+  }
+  return kept;
+}
+
+/**
+ * 把扁平玩家表归集成「只含主账号」的榜单。
+ * 主账号积分 = 自身历史积分 + 名下所有子账号积分之和。
+ * 子账号明细挂在 children 字段上，供表格展开查看。
+ *
+ * @returns {Array} 按汇总积分降序排列
+ */
+export function buildMainRanking(players) {
+  const raw = Array.isArray(players) ? players : [];
+  const names = new Set(raw.map((player) => player.name));
+
+  // 防御：parent 指向的账号不在本列表里（例如今日榜没带主账号），
+  // 就把它降级为独立玩家，避免这条战绩在榜单上凭空消失
+  const list = raw.map((player) =>
+    player.parent && !names.has(player.parent)
+      ? { ...player, parent: null }
+      : player
+  );
+
+  const mains = list.filter((player) => !player.parent);
+
+  return mains
+    .map((main) => {
+      const children = childrenOf(list, main.name);
+      // 主账号在挂子账号之前若自己上过桌，那部分积分也要算进来
+      const members = [main, ...children];
+
+      let score = 0;
+      const raceResult = { win: 0, lose: 0, deuce: 0 };
+      members.forEach((member) => {
+        score += toCents(member.score);
+        const result = member.raceResult || {};
+        raceResult.win += toInt(result.win);
+        raceResult.lose += toInt(result.lose);
+        raceResult.deuce += toInt(result.deuce);
+      });
+
+      // 连胜/连败取最近一次有结果的成员状态
+      const latest = members.reduce(
+        (acc, member) =>
+          !acc || toInt(member.raceDate) > toInt(acc.raceDate) ? member : acc,
+        null
+      );
+
+      return {
+        ...main,
+        score: fromCents(score),
+        raceResult,
+        lastState: latest ? latest.lastState || "deuce" : "deuce",
+        stateTimes: latest ? toInt(latest.stateTimes) : 0,
+        children,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * 确保一批玩家都存在于排行榜中，缺失的按初始值补齐。
+ * 回调收到的 index 是「本次新增的连续序号」，不是数组下标，
+ * 否则与工厂函数自身的偏移叠加会让座位号跳号。
+ */
+export function ensurePlayers(ranking, names, createPlayer) {
+  const list = Array.isArray(ranking) ? [...ranking] : [];
+  const base = list.length;
+  let added = 0;
+
+  names.forEach((name) => {
+    if (!name) return;
+    const exists = list.some((player) => player.name === name);
+    if (!exists) {
+      list.push(createPlayer(base + added, name));
+      added += 1;
+    }
+  });
+
+  return list;
+}
+
+function toInt(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
+/** 胜负场次展示 */
+export function formatRecord(row) {
+  const result = row.raceResult || {};
+  return `${result.win || 0} / ${result.lose || 0}`;
+}
+
+/** 胜率展示 */
+export function formatWinRate(row) {
+  const result = row.raceResult || {};
+  const total = (result.win || 0) + (result.lose || 0) + (result.deuce || 0);
+  if (!total) return "—";
+  return `${(((result.win || 0) / total) * 100).toFixed(1)}%`;
+}
+
+/** 连胜/连败状态展示 */
+export function formatState(row) {
+  const times = Number(row.stateTimes) || 0;
+  if (!times) return "—";
+  return `${times}连${row.lastState === "lose" ? "败" : "胜"}`;
+}
