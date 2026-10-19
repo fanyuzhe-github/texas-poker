@@ -21,3 +21,7 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# 本地工作产物：浏览器截图/预览（可随时重跑生成）、过期卡面素材
+.workbuddy/preview/
+.workbuddy/legacy-cards-sprite96/
