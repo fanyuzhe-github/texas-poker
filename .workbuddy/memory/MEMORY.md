@@ -9,6 +9,7 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（勿升级）；build/dev 都要 `NODE_OP
 - ⚠️ 主账号亲自上桌**不会翻倍**：战绩只记在自己头上，`buildMainRanking` 的 `members=[main, ...children]` 天然各算一次。实测三哥自己赢 10 → 汇总 117→127（76+41+10）。
 - ⚠️ `buildTodayRanking` 判断「主账号是否真上过桌」要看**今日榜这一行自己的 `raceResult`**（`totalGames(player) > 0`），不能看总库 `ref` —— 总库那份可能还是 0 场，会把真上过桌的主账号误剔。
 - ⚠️ 积分只记在实际下场的号头上，汇总一律实时算（两处都算过会翻倍）。改名/解绑/换头像要同时写 `allPlayers` 与今日榜 `players`。
+- ⚠️ **删局/清空流水必须走 `rebuildPlayersFromHistory`**（`core/ranking.js`，按 time 升序整体重放，只重建 5 个战绩字段）。`applyOutcome` 只能往前累加，退不回去——只改 `history` 不重建，总榜/段位/记录/勋章会继续按幽灵牌局算账。今日榜重建要加当天 `filter`，否则删旧账会冲掉今天的分。
 - ⚠️ **选人列表不预置任何默认昵称**（`DEFAULT_PLAYER_NAMES` 那 6 个已于 2026-10-18 删除）：`playerOptions` 只来自 `selectableNames(allPlayers)`；空名册靠 `el-select` 的 `slot="empty"` 提示「敲名字回车自动入库」（`allow-create`）。
 
 ## 头像
@@ -62,7 +63,7 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（勿升级）；build/dev 都要 `NODE_OP
 - ⚠️ `el-row/el-col` 是 float，`align-items:stretch` 无效；座位表保持自然高度。
 
 ## 工程
-单测 `/tmp/pokertest/`（跨重启会丢；同步：`cp src/core/*.js` 后 perl 给 import 补 `.js` 后缀）。浏览器实测用 agent-browser（独立 profile）。金额 `money.js`、持久化 `storage.js`、CSV 带 BOM。`.workbuddy/scripts/`：`gift-tickets.js`/`seed-demo.js`/`svg2png`（换卡图必须 `density:300`）。所有改动**未 git commit**。
+单测 `/tmp/pokertest/`（跨重启会丢；同步：`cp src/core/*.js` 后 perl 给 import 补 `.js` 后缀）。浏览器实测用 agent-browser（独立 profile）。金额 `money.js`、持久化 `storage.js`、CSV 带 BOM。`.workbuddy/scripts/`：`gift-tickets.js`/`seed-demo.js`/`svg2png`（换卡图必须 `density:300`）。**git 已入库**（2026-10-19 补了 3 次提交：chore 忽略 preview / feat 主体 124 文件 / fix 删局回滚），远程 origin 是 gitee，**尚未 push**；`.workbuddy/preview/` 与 `legacy-cards-sprite96/` 已 gitignore。
 - **测试数据**：`node .workbuddy/scripts/gen-test-data.mjs` 生成 `.workbuddy/testdata/poker-test-data.json`（`app:"texas-poker"`，可走「设置 → 数据备份 → 导入备份 → 覆盖导入」）；`verify-test-data.mjs` 用真实 core 复验 14 项记录/段位档数/勋章数/赛季数/卡包口径，改完数据必跑。⚠️ 两个脚本都用 `cp core → 临时目录 + perl 补 .js 后缀` 的方式 import 源码（源码 import 无后缀，Node 直接跑不了）。
 - ⚠️ **段位只有 ±100 元（12 档 × 20 元）**，造数据时局数和单局波动必须压住：23 局 × base 10 元就已经把 7 人顶到 6 个档位。设成 40+ 局或塞 200 元底注豪赌局，分数会飙到 ±1000，全员挤在「人形 ATM / 赌神下凡」两档，段位等于白做。
 - ⚠️ **总榜积分列曾固定 66px**：三位数 `160.00` 会被折成两行（粗体 13px 装不下）。已改 78px + `.score{white-space:nowrap;font-variant-numeric:tabular-nums}`，别再调回去。
