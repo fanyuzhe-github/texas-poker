@@ -63,8 +63,31 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（勿升级）；build/dev 都要 `NODE_OP
 - ⚠️ `el-row/el-col` 是 float，`align-items:stretch` 无效；座位表保持自然高度。
 
 ## 工程
-单测 `/tmp/pokertest/`（跨重启会丢；同步：`cp src/core/*.js` 后 perl 给 import 补 `.js` 后缀）。浏览器实测用 agent-browser（独立 profile）。金额 `money.js`、持久化 `storage.js`、CSV 带 BOM。`.workbuddy/scripts/`：`gift-tickets.js`/`seed-demo.js`/`svg2png`（换卡图必须 `density:300`）。**git 已入库**（2026-10-19 补了 3 次提交：chore 忽略 preview / feat 主体 124 文件 / fix 删局回滚），远程 origin 是 gitee，**尚未 push**；`.workbuddy/preview/` 与 `legacy-cards-sprite96/` 已 gitignore。
+单测 `/tmp/pokertest/`（跨重启会丢；同步：`cp src/core/*.js` 后 perl 给 import 补 `.js` 后缀）。浏览器实测用 agent-browser（独立 profile）。金额 `money.js`、持久化 `storage.js`、CSV 带 BOM。`.workbuddy/scripts/`：`gift-tickets.js`/`seed-demo.js`/`svg2png`（换卡图必须 `density:300`）。**git 已入库**。远程有两个：`origin`=gitee 旧库（2024 年、已分叉，**永不 push**，留着考古）；`github`=`git@github.com:fanyuzhe-github/texas-poker.git`（主远程，推 `master`）。`.workbuddy/preview/`、`legacy-cards-sprite96/`、`testdata/` 均已 gitignore。
+- **线上站点**：<https://fanyuzhe-github.github.io/texas-poker/>（GitHub Pages，仓库 Public）。`.github/workflows/deploy.yml` 在 push master 时自动 build + `deploy-pages@v4` 发布；`vue.config.js` 的 `publicPath:"./"` 在子路径下正好可用（产物是 `css/app.xxx.css` 这类相对路径，已实测全部 200）。
+- ⚠️ **`.npmrc` 里的 `legacy-peer-deps=true` 别删**：`less-loader@11.1.3` 的 peer 声明只收 `webpack@^5`，而 vue-cli 4 锁 `webpack@4.47.0`，npm 10 会直接 ERESOLVE 让 `npm ci` 挂掉（CI 表现：`npm ci` 和兜底的 `npm install` **双双失败**）。这套组合本地 build 一直是通的 → 跳过校验是正解，**不要为此降级 less-loader**（降级要重生成 lock，反而没验证过）。
+- ⚠️ **`package-lock.json` 里不能留 `registry.npmmirror.com`**：当初装包用国内镜像，1412 个 `resolved` 全写死了该域名，Actions runner 在海外 → 已批量替换成 `registry.npmjs.org`（tarball 一致，integrity 不受影响）。以后本地重新 `npm install`，记得检查锁里的源有没有被改回去。
+- ⚠️ **本机 `npm ci` 必定 OOM**（exit 137，沙箱内外一样）→ 别指望本地复现 CI 安装步骤。⚠️ **Actions 日志下载要管理员 token**（`GET .../actions/jobs/{id}/logs` 返回 403 `Must have admin rights`，公开仓库也一样；`annotations` 接口是 404），机器里没有任何 GitHub token → CI 报错只能让用户在浏览器里贴。
 - **测试数据**：`node .workbuddy/scripts/gen-test-data.mjs` 生成 `.workbuddy/testdata/poker-test-data.json`（`app:"texas-poker"`，可走「设置 → 数据备份 → 导入备份 → 覆盖导入」）；`verify-test-data.mjs` 用真实 core 复验 14 项记录/段位档数/勋章数/赛季数/卡包口径，改完数据必跑。⚠️ 两个脚本都用 `cp core → 临时目录 + perl 补 .js 后缀` 的方式 import 源码（源码 import 无后缀，Node 直接跑不了）。
 - ⚠️ **段位只有 ±100 元（12 档 × 20 元）**，造数据时局数和单局波动必须压住：23 局 × base 10 元就已经把 7 人顶到 6 个档位。设成 40+ 局或塞 200 元底注豪赌局，分数会飙到 ±1000，全员挤在「人形 ATM / 赌神下凡」两档，段位等于白做。
 - ⚠️ **总榜积分列曾固定 66px**：三位数 `160.00` 会被折成两行（粗体 13px 装不下）。已改 78px + `.score{white-space:nowrap;font-variant-numeric:tabular-nums}`，别再调回去。
 - 造数据的正确姿势：**每局零和**（sum(delta)=0）、**players 一律由 history 走 `applyOutcome` 重放**（手写 score/raceResult 必然和流水打架）、时间戳覆盖冬季跨年才有 4 个赛季。
+
+## 云同步（2026-10-19 定方案，未实施）
+
+**用户场景（问过本人）**：**一个人记账**，牌友不写数据。痛点只有两个 —— **怕数据丢** + **换设备能接着用**。
+明确**不需要**多人实时协作，也**不需要**发给牌友看。
+→ 结论：**不要上实时数据库**（Supabase/云开发），单写者场景为并发冲突引入 Postgres 是过度设计。
+
+**选定方案：GitHub Gist 当云端存档**（零注册，用户已有 GitHub 账号；数据全 JSON、几百 KB，一个 gist 文件装得下）。
+
+落地要点（动手前先看）：
+- 分层：`src/core/sync.js` 放纯函数（打包/解包/冲突判定，可进单测）；`src/utils/gist.js` 放网络请求
+  —— core 不许有副作用，别把 fetch 写进 core
+- 打包进云：`players` / `history` / `settings` / `cards`；**`daily` 不进云**（跨天自动作废，备份它没意义）
+- 快照带 `app:"texas-poker"` + `schemaVersion` + `updatedAt`，导入时校验
+- ⚠️ 新 key（token / gistId / lastSyncAt）**必须登记 `STORAGE_KEYS`**，否则写出 `"undefined"` 脏键
+- 单写者仍需 `updatedAt` 兜底：恢复时若云端比本地新，提示「云端有更新的数据，是否覆盖」
+- 网络失败**绝不阻断本地使用**——照常能玩，只是没备份；加超时 + 重试 + 明确状态提示（手机端无代理会慢）
+- 安全：用 **fine-grained PAT，只勾 `gists: read and write` 一项**；gist 设为 **secret**；
+  token 存 localStorage 本机，**不要让用户把 token 发给 AI**，让他自己粘进设置页

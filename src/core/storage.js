@@ -17,6 +17,8 @@ export const STORAGE_KEYS = {
   cards: "poker:cards",
   /** 今日结算：只记「哪天领过奖」，跨天自动作废，不进备份 */
   daily: "poker:daily",
+  /** 云备份配置（token / gistId / 上次同步时间）。只在本机，永远不进云端快照 */
+  cloud: "poker:cloud",
 };
 
 const VALID_STATES = ["win", "lose", "deuce"];
@@ -228,6 +230,48 @@ export function loadDaily() {
 
 export function saveDaily(state) {
   return safeWrite(STORAGE_KEYS.daily, normalizeDaily(state));
+}
+
+/* ------------------------------------------------------------------ */
+/* 云备份配置                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 云备份的本机配置。
+ * token 属于敏感信息，只落本机 localStorage，
+ * 打包快照时**绝不能**把它带进去（buildSnapshot 里也没有这个字段）。
+ */
+export function normalizeCloud(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const token = String(source.token == null ? "" : source.token).trim();
+  return {
+    token,
+    gistId: String(source.gistId == null ? "" : source.gistId).trim(),
+    lastSyncAt: Number(source.lastSyncAt) || 0,
+    /** 结算后自动上传，默认开——这是「防丢」的核心 */
+    autoBackup: source.autoBackup !== false,
+    /** 上次成功备份时的快照时间，用来和云端比对新旧 */
+    syncedUpdatedAt: Number(source.syncedUpdatedAt) || 0,
+  };
+}
+
+export function loadCloud() {
+  return normalizeCloud(safeRead(STORAGE_KEYS.cloud, null));
+}
+
+export function saveCloud(config) {
+  return safeWrite(STORAGE_KEYS.cloud, normalizeCloud(config));
+}
+
+/** 断开云备份：连 token 一起抹掉，不留残骸 */
+export function clearCloud() {
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.cloud);
+    return true;
+  } catch (error) {
+    console.warn("[storage] 清除云备份配置失败", error);
+    return false;
+  }
 }
 
 /** 一次性把旧版本遗留的脏字段就地修好 */

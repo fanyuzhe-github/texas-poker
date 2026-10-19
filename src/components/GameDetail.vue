@@ -550,6 +550,56 @@
             数据只存在本机浏览器中，清理缓存会丢失，建议定期导出备份
           </div>
         </el-form-item>
+
+        <el-form-item label="云备份">
+          <template v-if="cloud && cloud.token">
+            <div class="cloud-status">
+              <i class="el-icon-success"></i>
+              <span>{{ cloud.gistId ? "已连接到云端" : "token 已保存，还没备份过" }}</span>
+            </div>
+            <div class="form-tip">
+              上次备份：{{
+                cloud.lastSyncAt ? formatCloudTime(cloud.lastSyncAt) : "还没有备份过"
+              }}
+            </div>
+            <div class="backup-actions cloud-actions">
+              <el-button
+                size="small"
+                icon="el-icon-upload"
+                :loading="cloudBusy"
+                @click="handleBackupNow"
+                >立即备份</el-button
+              >
+              <el-button
+                size="small"
+                icon="el-icon-refresh-left"
+                :disabled="cloudBusy"
+                @click="handleRestoreFromCloud"
+                >从云端恢复</el-button
+              >
+              <el-button size="small" icon="el-icon-circle-close" @click="handleDisconnectCloud"
+                >断开</el-button
+              >
+            </div>
+          </template>
+          <template v-else>
+            <el-input
+              v-model="cloudForm.token"
+              size="small"
+              type="password"
+              show-password
+              placeholder="粘贴 GitHub token（只保存在本机）"
+            ></el-input>
+            <div class="backup-actions cloud-actions">
+              <el-button size="small" type="primary" @click="handleSaveCloudToken"
+                >保存 token</el-button
+              >
+            </div>
+          </template>
+          <div class="form-tip">
+            存档放在 GitHub Gist，免费且不会因闲置被清空。token 只存本机，不会上传。
+          </div>
+        </el-form-item>
       </el-form>
       <div slot="footer">
         <el-button @click="settingsVisible = false">取消</el-button>
@@ -626,10 +676,15 @@ import {
   saveSettings,
   loadCards,
   saveCards,
+  loadCloud,
+  saveCloud,
+  clearCloud,
   migrate,
   STORAGE_KEYS,
   todayKey,
 } from "../core/storage";
+import { buildSnapshot, parseSnapshot, decideSync, isSnapshotTooBig } from "../core/sync";
+import { createGist, updateGist, fetchGist } from "../utils/gist";
 import { buildAchievements } from "../core/achievements";
 import { buildNewRecords } from "../core/records";
 import { tierLabel, tierTone, tierTip } from "../core/tier";
@@ -707,6 +762,9 @@ export default {
       daily: null, // 今日结算领奖状态：哪天、谁领过免费抽卡
       avatarPickerVisible: false, // 头像选择器
       avatarPickerName: "", // 正在给谁换头像
+      cloud: null, // 云备份配置（token / gistId / 上次同步），只在本机
+      cloudBusy: false, // 正在上传或下载，防重复点击
+      cloudForm: { token: "" }, // 设置弹窗里的 token 输入框
     };
   },
   computed: {
@@ -852,6 +910,7 @@ export default {
     this.history = loadHistory();
     this.cardState = loadCards();
     this.daily = loadDaily();
+    this.cloud = loadCloud();
     this.refreshPlayerOptions();
   },
   methods: {
@@ -1280,6 +1339,10 @@ export default {
       }
 
       this.grantCards(game, prevRound, prevHistory);
+
+      // 战绩、名册、卡包此时都已落盘，静默推一份到云端。
+      // 这一步在结算流程最末尾，成功与否都不影响本局结果。
+      this.autoBackupToCloud();
     },
 
     /**
@@ -1646,6 +1709,177 @@ export default {
         row.buyIn = baseChips;
       });
       this.$message.success("设置已保存");
+    },
+
+    /* -------------------------------------------------------------- */
+    /* 云备份（GitHub Gist）                                           */
+    /* -------------------------------------------------------------- */
+
+    /** 打包当前本机数据。daily 不进云，见 sync.js */
+    takeSnapshot() {
+      return buildSnapshot({
+        players: this.allPlayers,
+        history: this.history,
+        settings: this.settings,
+        cards: this.cardState,
+      });
+    },
+
+    /** 把云端存档写回本机，并立刻落盘 + 刷新界面 */
+    applySnapshot(snapshot) {
+      this.allPlayers = snapshot.players;
+      this.history = snapshot.history;
+      this.settings = snapshot.settings;
+      this.cardState = snapshot.cards;
+      savePlayers(this.allPlayers);
+      saveHistory(this.history);
+      saveSettings(this.settings);
+      saveCards(this.cardState);
+      this.settingsForm = { ...this.settings };
+      this.refreshPlayerOptions();
+    },
+
+    /**
+     * 上传到云端。没有 gistId 就先建一个 secret gist。
+     * @param {boolean} silent true 时成功不弹提示（结算后自动备份用）
+     */
+    async uploadSnapshot(silent) {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.token || this.cloudBusy) return false;
+      this.cloudBusy = true;
+      try {
+        const snapshot = this.takeSnapshot();
+        const content = JSON.stringify(snapshot);
+        let gistId = cloud.gistId;
+
+        if (!gistId) {
+          gistId = await createGist(cloud.token, content);
+          if (!gistId) throw new Error("创建云端存档失败");
+        } else {
+          await updateGist(cloud.token, gistId, content);
+        }
+
+        this.cloud = {
+          ...cloud,
+          gistId,
+          lastSyncAt: Date.now(),
+          syncedUpdatedAt: snapshot.updatedAt,
+        };
+        saveCloud(this.cloud);
+
+        if (!silent) this.$message.success("已备份到云端");
+        if (isSnapshotTooBig(snapshot)) {
+          this.$message.warning("备份体积接近上限，建议再导出一份本地存档");
+        }
+        return true;
+      } catch (error) {
+        const text = error && error.message ? error.message : "备份失败";
+        // 自动备份失败也要出声：不然用户会以为数据已经安全了
+        if (silent) this.$message.warning(`云端备份未成功：${text}`);
+        else this.$message.error(text);
+        return false;
+      } finally {
+        this.cloudBusy = false;
+      }
+    },
+
+    /** 结算后静默推一份。失败只提示，绝不打断本局 */
+    autoBackupToCloud() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.token || !cloud.autoBackup) return;
+      this.uploadSnapshot(true);
+    },
+
+    handleSaveCloudToken() {
+      const token = String(this.cloudForm.token || "").trim();
+      if (!token) {
+        this.$message.warning("请先粘贴 token");
+        return;
+      }
+      this.cloud = { ...loadCloud(), token };
+      saveCloud(this.cloud);
+      this.$message.success("token 已保存到本机，点「立即备份」试试能不能连上");
+    },
+
+    handleBackupNow() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.token) {
+        this.$message.warning("请先填写并保存 token");
+        return;
+      }
+      this.uploadSnapshot(false);
+    },
+
+    async handleRestoreFromCloud() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.token) {
+        this.$message.warning("请先填写并保存 token");
+        return;
+      }
+      if (!cloud.gistId) {
+        this.$message.warning("本机还没有云端存档，先点一次「立即备份」");
+        return;
+      }
+      if (this.cloudBusy) return;
+
+      this.cloudBusy = true;
+      let snapshot = null;
+      try {
+        const raw = await fetchGist(cloud.token, cloud.gistId);
+        const parsed = parseSnapshot(raw);
+        if (!parsed.ok) throw new Error(parsed.reason);
+        snapshot = parsed.snapshot;
+      } catch (error) {
+        this.$message.error(error && error.message ? error.message : "读取云端存档失败");
+        return;
+      } finally {
+        this.cloudBusy = false;
+      }
+
+      const when = snapshot.updatedAt ? this.formatCloudTime(snapshot.updatedAt) : "未知时间";
+      // 拿上次同步的快照时间当本机基线：换设备时它是 0，云端必定更新
+      const action = decideSync(cloud.syncedUpdatedAt || 0, snapshot.updatedAt);
+      const tip =
+        action === "download"
+          ? `云端存档比本机新（${when}），恢复后本机未备份的改动会丢失。`
+          : `将用云端存档（${when}）覆盖本机，本机未备份的改动会丢失。`;
+
+      // 单写者场景，但换设备时本机可能是旧数据 —— 一律先问再做
+      this.$confirm(tip, "从云端恢复", {
+        confirmButtonText: "覆盖本机",
+        cancelButtonText: "取消",
+        type: "warning",
+      })
+        .then(() => {
+          this.applySnapshot(snapshot);
+          this.cloud = { ...this.cloud, syncedUpdatedAt: snapshot.updatedAt };
+          saveCloud(this.cloud);
+          this.$message.success("已从云端恢复");
+        })
+        .catch(() => {});
+    },
+
+    handleDisconnectCloud() {
+      this.$confirm(
+        "断开后本机不再自动备份；已上传的云端存档不会被删除，重新填 token 即可接回。",
+        "断开云备份",
+        { confirmButtonText: "断开", cancelButtonText: "取消", type: "warning" }
+      )
+        .then(() => {
+          clearCloud();
+          this.cloud = loadCloud();
+          this.cloudForm = { token: "" };
+          this.$message.success("已断开云备份");
+        })
+        .catch(() => {});
+    },
+
+    formatCloudTime(time) {
+      const date = new Date(time);
+      const pad = (value) => String(value).padStart(2, "0");
+      return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${pad(
+        date.getHours()
+      )}:${pad(date.getMinutes())}`;
     },
 
     handleExportJson() {
@@ -2753,6 +2987,16 @@ export default {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+.cloud-actions {
+  margin-top: 8px;
+}
+.cloud-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #67c23a;
 }
 .upload-inline {
   display: inline-block;
