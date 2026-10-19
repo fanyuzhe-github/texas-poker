@@ -87,13 +87,23 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（勿升级）。build/dev 都要 `NODE_OP
 - 进云：`players`/`history`/`settings`/`cards`；**`daily` 不进云**（跨天作废）
 - 安全：fine-grained PAT **只勾 `gists: read and write`**；gist 设 secret；**别让用户把 token 发给 AI**
 
-### 用户嫌麻烦，在评估实时方案（2026-10-19 晚）
-麻烦点：token **90 天过期** + 换设备要**手动点恢复**。额度核实（2026-10 官方页）：
-- **Supabase 免费**：500MB 库、Realtime 200 并发/2M 消息月、单消息 256KB；⚠️ **7 天不活动自动暂停**
-- **Appwrite 免费**：同为 7 天暂停，⚠️ **暂停满 90 天删库** → 排除
-- **腾讯云开发免费**：3000 资源点/月、1 环境、**6 个月续期一次**、需实名；国内最快
-- **Deno Deploy 免费**：1M 请求月、1GiB KV、**不休眠**、不用实名/信用卡、`kv.watch()` 原生实时
-- **Firebase**：国内被墙 → 排除
-- ⚠️ **打牌间隔常 2~3 周，正好落在 7 天暂停区** → 「不活动即休眠」的免费层不适合本场景
+### 实时同步：Deno Deploy + KV（commit `b4ace1e`，**待用户自己部署**）
+Gist 的麻烦点：token **90 天过期** + 换设备要**手动点恢复** → 用户要实时方案。
+
+**为什么不选 Supabase**（2026-10 官方页核实）：
+- Supabase / Appwrite 免费层都是 **7 天不活动自动暂停**，Appwrite 暂停满 90 天**删库**
+- ⚠️ **打牌间隔常 2~3 周，正好踩在暂停区** → 「不活动即休眠」的免费层不适合本场景
+- Firebase 国内被墙；腾讯云开发要实名 + 6 个月续期（国内最快 0.23s，留作备选）
+- Deno Deploy 免费层 **不休眠**、不用实名/信用卡、`kv.watch()` 原生实时、额度过剩
 - 实测（有代理）：腾讯云 0.23s < Cloudflare 0.46s < Supabase 1.16s < Deno 1.30s
-- 推荐：**Deno Deploy + KV**（后端约 120 行，前端 fetch + EventSource，**零新 SDK**）；备选腾讯云开发
+
+落地：
+- `server/main.ts`：`GET/POST /api/state?room=`、`GET /api/watch`（SSE）、`/api/ping`；部署步骤见 `server/README.md`
+- `src/utils/live.js`：唯一发请求处 —— `normalizeEndpoint/isValidRoom/randomRoom/pingEndpoint/fetchState/pushState/subscribeState`
+- `storage.js` cloud 新增 `endpoint/room/liveEnabled/liveLastSyncAt/liveSyncedUpdatedAt`
+- `GameDetail.vue`：`handleConnectLive`/`pushLiveSnapshot`/`syncLiveOnStart`/`startLiveWatch`；结算末尾推一次
+- ⚠️ **前端零新 SDK**：fetch + EventSource，bundle 不膨胀（Supabase/云开发要塞上百 KB）
+- ⚠️ SSE 会收到自己刚推上去的那份 → 用 `snapshot.updatedAt <= liveSyncedUpdatedAt` 滤掉回环
+- ⚠️ 房间码即口令（4~64 位字母数字），UI 默认点「随机」生成，别用能猜到的
+- ⚠️ 后端校验：`deno check --unstable-kv`；`setInterval` 类型是 `ReturnType<typeof setInterval>`，不是 number
+- ⚠️ 部署**只能用户自己做**（AI 没有他的 Deno 账号）；前端继续 GitHub Pages，两边互不影响
