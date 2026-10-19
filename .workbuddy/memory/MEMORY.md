@@ -73,7 +73,7 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（勿升级）；build/dev 都要 `NODE_OP
 - ⚠️ **总榜积分列曾固定 66px**：三位数 `160.00` 会被折成两行（粗体 13px 装不下）。已改 78px + `.score{white-space:nowrap;font-variant-numeric:tabular-nums}`，别再调回去。
 - 造数据的正确姿势：**每局零和**（sum(delta)=0）、**players 一律由 history 走 `applyOutcome` 重放**（手写 score/raceResult 必然和流水打架）、时间戳覆盖冬季跨年才有 4 个赛季。
 
-## 云同步（2026-10-19 定方案，未实施）
+## 云同步（2026-10-19 已上线：GitHub Gist 备份）
 
 **用户场景（问过本人）**：**一个人记账**，牌友不写数据。痛点只有两个 —— **怕数据丢** + **换设备能接着用**。
 明确**不需要**多人实时协作，也**不需要**发给牌友看。
@@ -89,5 +89,19 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（勿升级）；build/dev 都要 `NODE_OP
 - ⚠️ 新 key（token / gistId / lastSyncAt）**必须登记 `STORAGE_KEYS`**，否则写出 `"undefined"` 脏键
 - 单写者仍需 `updatedAt` 兜底：恢复时若云端比本地新，提示「云端有更新的数据，是否覆盖」
 - 网络失败**绝不阻断本地使用**——照常能玩，只是没备份；加超时 + 重试 + 明确状态提示（手机端无代理会慢）
+
+**已落地**（commit `6ed3c92`）：
+- `src/core/sync.js`（纯函数，单测 `test-sync.js` **43 项**）：`buildSnapshot` / `parseSnapshot`
+  / `decideSync(local, remote)` / `snapshotSize` / `isSnapshotTooBig`
+- `src/utils/gist.js`（唯一发请求处）：15s 超时、401/403/404/422 转中文、`truncated` 时改用 `raw_url` 补全
+- `src/core/storage.js`：`STORAGE_KEYS.cloud = "poker:cloud"`，`loadCloud/saveCloud/clearCloud`，
+  字段 `token / gistId / lastSyncAt / autoBackup / syncedUpdatedAt`
+- `GameDetail.vue`：设置弹窗加「云备份」表单项；结算流程末尾（grantCards 之后）调 `autoBackupToCloud()`
+- ⚠️ **不需要压缩库**：`history` 有 `slice(0, 200)` 硬上限，快照永远到不了 gist 的 1MB 截断线，
+  所以没引 lz-string。`isSnapshotTooBig` 只是防御性告警
+- ⚠️ 恢复时**一律先弹确认框**（单写者也可能在换设备后误覆盖），靠 `decideSync` 区分
+  「云端比本机新」和「与上次同步一致」两种文案；本地基线用 `cloud.syncedUpdatedAt`
+- 断网/超时时自动备份会弹 **warning**（不能静默，否则用户以为数据已安全）；手动备份弹 error
+- token 由用户自己粘进设置页（**不要让他把 token 发给 AI**），fine-grained 只勾 `gists: read and write`
 - 安全：用 **fine-grained PAT，只勾 `gists: read and write` 一项**；gist 设为 **secret**；
   token 存 localStorage 本机，**不要让用户把 token 发给 AI**，让他自己粘进设置页
