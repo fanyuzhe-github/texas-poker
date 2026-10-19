@@ -122,15 +122,18 @@ function handleWatch(room: string, req: Request): Response {
 
       send("ready", { room });
 
-      // 25 秒一行注释，防止中间层把空闲连接掐掉
+      // 心跳防中间层掐空闲连接。⚠️ 必须是「有名字的事件」而不是 : 注释行 ——
+      // 注释行不触发任何 JS 事件，前端就无从判断这条连接还活着。
       heartbeat = setInterval(() => {
         if (closed) return;
         try {
-          controller.enqueue(encoder.encode(": ping\n\n"));
+          controller.enqueue(
+            encoder.encode(`event: ping\ndata: {"t":${Date.now()}}\n\n`),
+          );
         } catch {
           closed = true;
         }
-      }, 25000);
+      }, 20000);
 
       const stop = () => {
         if (closed) return;

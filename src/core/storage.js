@@ -321,6 +321,12 @@ export function normalizeCloud(raw) {
     liveLastSyncAt: Number(source.liveLastSyncAt) || 0,
     /** 实时同步上次成功时云端快照的时间 */
     liveSyncedUpdatedAt: Number(source.liveSyncedUpdatedAt) || 0,
+    /**
+     * 上次成功**上传**的时刻（只记上传，收到云端的不算）。
+     * 防抖合并时要靠它判断「刚推过就别再推」，绝不能用 liveLastSyncAt ——
+     * 那个字段收到云端数据也会刷新，用它判断会把本机的改动整个吞掉。
+     */
+    liveLastPushAt: Number(source.liveLastPushAt) || 0,
   };
 }
 

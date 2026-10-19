@@ -554,8 +554,13 @@
         <el-form-item label="实时同步">
           <template v-if="cloud && cloud.liveEnabled">
             <div class="cloud-status">
-              <i class="el-icon-success"></i>
-              <span>已连接，任何改动都会自动同步</span>
+              <i
+                :class="liveLinkStatus === 'live' ? 'el-icon-success' : 'el-icon-warning'"
+                :style="liveLinkStatus === 'live' ? '' : 'color:#e6a23c'"
+              ></i>
+              <span :style="liveLinkStatus === 'live' ? '' : 'color:#e6a23c'">
+                {{ liveLinkText }}
+              </span>
             </div>
             <div class="form-tip">
               房间：{{ cloud.room }} · 上次同步：{{
@@ -832,6 +837,7 @@ export default {
       liveBusy: false,
       liveUnsubscribe: null, // SSE 关闭函数，非响应式
       livePushTimer: null, // 本地改动后的防抖上传定时器，非响应式
+      liveLinkStatus: "connecting", // 实时连接状态：live 正常 / down 断了 / connecting 重连中
       offLocalChange: null, // 取消订阅本地改动
       cloudForm: { token: "" }, // 设置弹窗里的 token 输入框
     };
@@ -839,6 +845,12 @@ export default {
   computed: {
     baseChips() {
       return this.settings.baseChips;
+    },
+    /** 实时连接状态文案。断线要说清楚，不然用户会以为数据同步了其实没有 */
+    liveLinkText() {
+      if (this.liveLinkStatus === "live") return "实时连接正常，任何改动都会自动同步";
+      if (this.liveLinkStatus === "down") return "连接中断，正在自动重连（改动仍会上传）";
+      return "正在连接…";
     },
     /** 结算抽屉的盈亏榜：按盈亏从高到低，并列时用码点序兜底（localeCompare 会抖） */
     resultsSorted() {
@@ -988,11 +1000,19 @@ export default {
     }
     // 任何一处本地写入都会走到这里，改名、删局、抽卡、改底注都能自动跟上云端
     this.offLocalChange = onLocalChange(() => this.scheduleLivePush());
+    // 切回页面 / 休眠唤醒 / 网络恢复：SSE 常在这些时候假死，趁机重连并补拉一次
+    this.liveWakeHandler = () => this.handleLiveWake();
+    document.addEventListener("visibilitychange", this.liveWakeHandler);
+    window.addEventListener("online", this.liveWakeHandler);
   },
   beforeDestroy() {
     this.stopLiveWatch();
     this.clearLivePushTimer();
     if (typeof this.offLocalChange === "function") this.offLocalChange();
+    if (this.liveWakeHandler) {
+      document.removeEventListener("visibilitychange", this.liveWakeHandler);
+      window.removeEventListener("online", this.liveWakeHandler);
+    }
   },
   methods: {
     format,
@@ -2089,7 +2109,11 @@ export default {
           else this.$message.error(text);
           return false;
         }
-        this.patchCloud({ liveLastSyncAt: Date.now(), liveSyncedUpdatedAt: snapshot.updatedAt });
+        this.patchCloud({
+          liveLastPushAt: Date.now(),
+          liveLastSyncAt: Date.now(),
+          liveSyncedUpdatedAt: snapshot.updatedAt,
+        });
         if (!silent) this.$message.success("已同步到云端");
         return true;
       } finally {
@@ -2134,8 +2158,48 @@ export default {
             duration: 2500,
           });
         },
-        onError: () => {}, // EventSource 自己会重连，不打扰用户
+        onStatus: (state) => {
+          this.liveLinkStatus = state;
+        },
+        onError: () => {}, // 状态变化已经在界面上显示，不打扰用户
       });
+    },
+
+    /**
+     * 兜底补拉：主动问一次云端。
+     * SSE 拿来当加速器，但它不保证送达（休眠唤醒、切网络都可能丢），
+     * 所以切回页面、网络恢复、休眠唤醒时都再问一次。
+     */
+    async pullLiveSnapshot() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
+      if (this.settling) return;
+      const result = await fetchState(cloud.endpoint, cloud.room);
+      if (!result.ok || !result.snapshot) return;
+      const remote = result.snapshot;
+      if (remote.updatedAt <= (this.cloud.liveSyncedUpdatedAt || 0)) return;
+      this.applySnapshot(remote);
+      this.patchCloud({ liveSyncedUpdatedAt: remote.updatedAt, liveLastSyncAt: Date.now() });
+      this.$notify({
+        title: "已同步",
+        message: "另一台设备更新了数据，本机已跟上",
+        type: "success",
+        duration: 2500,
+      });
+    },
+
+    /**
+     * 网络恢复 / 切回页面 / 电脑唤醒：SSE 很可能已经是假死的了，
+     * 直接重连一条，再补拉一次把落下的补上。
+     */
+    handleLiveWake() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
+      if (document.hidden) return; // 页面在后台时没必要动
+      if (this.liveLinkStatus === "down" || this.liveLinkStatus === "connecting") {
+        if (typeof this.liveUnsubscribe === "function") this.liveUnsubscribe.reconnect();
+      }
+      this.pullLiveSnapshot();
     },
 
     stopLiveWatch() {
@@ -2153,9 +2217,16 @@ export default {
       if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
       this.clearLivePushTimer();
       this.livePushTimer = setTimeout(() => {
+        // 结算末尾刚推过一次，这次多半是同一批改动，可以省一次往返。
+        // ⚠️ 但绝不能直接丢弃 —— 一丢了这次改动就再也没机会上去了。
+        if (Date.now() - (this.cloud.liveLastPushAt || 0) < 2000) {
+          this.livePushTimer = setTimeout(() => {
+            this.livePushTimer = null;
+            this.pushLiveSnapshot(false, true);
+          }, 2000);
+          return;
+        }
         this.livePushTimer = null;
-        // 结算末尾那次推送刚完成，这次就免了，省一次往返
-        if (Date.now() - (this.cloud.liveLastSyncAt || 0) < 2000) return;
         this.pushLiveSnapshot(false, true);
       }, 1200);
     },

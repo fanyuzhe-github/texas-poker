@@ -9,6 +9,11 @@ import { parseSnapshot } from "../core/sync";
 
 const TIMEOUT = 15000;
 
+// 假死判定：服务端 20 秒一次心跳，连着 70 秒没收到任何东西就重连。
+// 取 20 秒的 3 倍多，容忍丢一两次心跳和轻微的网络抖动。
+const WATCHDOG_INTERVAL = 15000;
+const SILENCE_LIMIT = 70000;
+
 /** 把用户粘贴的地址收拾干净：去尾斜杠、补协议 */
 export function normalizeEndpoint(raw) {
   let url = String(raw || "").trim();
@@ -107,40 +112,92 @@ export async function pushState(endpoint, room, snapshot, force = false) {
  * onError 每次断线都会触发，调用方自己决定要不要提示。
  */
 export function subscribeState(endpoint, room, handlers = {}) {
-  const { onSnapshot, onOpen, onError } = handlers;
+  const { onSnapshot, onOpen, onError, onStatus } = handlers;
   const url = watchUrl(endpoint, room);
+
   let stopped = false;
   let source = null;
+  let lastMsgAt = Date.now();
+  let status = "connecting";
+  let watchdog = null;
 
-  try {
-    source = new EventSource(url);
-  } catch (error) {
+  function setStatus(next) {
+    if (status === next) return;
+    status = next;
+    if (onStatus) onStatus(next);
+  }
+
+  if (typeof EventSource === "undefined") {
     if (onError) onError("浏览器不支持实时连接，将改用打开时拉取");
+    setStatus("down");
     return () => {};
   }
 
-  source.addEventListener("ready", () => {
-    if (onOpen) onOpen();
-  });
-
-  source.addEventListener("state", (event) => {
-    let data = null;
-    try {
-      data = JSON.parse(event.data);
-    } catch (error) {
-      return;
-    }
-    const parsed = parseSnapshot(data);
-    if (parsed.ok && onSnapshot) onSnapshot(parsed.snapshot);
-  });
-
-  source.onerror = () => {
+  function open() {
     if (stopped) return;
-    if (onError) onError("实时连接中断，正在自动重连");
-  };
+    source = new EventSource(url);
 
-  return () => {
+    source.addEventListener("ready", () => {
+      lastMsgAt = Date.now();
+      setStatus("live");
+      if (onOpen) onOpen();
+    });
+
+    source.addEventListener("ping", () => {
+      lastMsgAt = Date.now();
+      setStatus("live");
+    });
+
+    source.addEventListener("state", (event) => {
+      lastMsgAt = Date.now();
+      setStatus("live");
+      let data = null;
+      try {
+        data = JSON.parse(event.data);
+      } catch (error) {
+        return;
+      }
+      const parsed = parseSnapshot(data);
+      if (parsed.ok && onSnapshot) onSnapshot(parsed.snapshot);
+    });
+
+    source.onerror = () => {
+      if (stopped) return;
+      setStatus("down");
+      // EventSource 自己会退避重连，这里只回报状态，不重复建连接
+      if (onError) onError("实时连接中断，正在自动重连");
+    };
+  }
+
+  /**
+   * 主动重连。休眠唤醒、切 WiFi、代理掐掉空闲连接之后，
+   * 那条连接会变成「开着但收不到东西」的假死状态 —— EventSource 不报 onerror，
+   * 只有「多久没收到消息」能看出来。
+   */
+  function reconnect() {
+    if (stopped) return;
+    if (source) {
+      source.close();
+      source = null;
+    }
+    lastMsgAt = Date.now();
+    setStatus("connecting");
+    open();
+  }
+
+  // 服务端 20 秒一次心跳，连着 70 秒一点动静都没有，认定假死
+  watchdog = setInterval(() => {
+    if (stopped) return;
+    if (Date.now() - lastMsgAt >= SILENCE_LIMIT) reconnect();
+  }, WATCHDOG_INTERVAL);
+
+  open();
+
+  const close = () => {
     stopped = true;
+    if (watchdog) clearInterval(watchdog);
     if (source) source.close();
   };
+  close.reconnect = reconnect;
+  return close;
 }
