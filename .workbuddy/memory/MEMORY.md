@@ -87,7 +87,11 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（勿升级）。build/dev 都要 `NODE_OP
 - 进云：`players`/`history`/`settings`/`cards`；**`daily` 不进云**（跨天作废）
 - 安全：fine-grained PAT **只勾 `gists: read and write`**；gist 设 secret；**别让用户把 token 发给 AI**
 
-### 实时同步：Deno Deploy + KV（commit `b4ace1e`，**待用户自己部署**）
+### 实时同步：Deno Deploy + KV（commit `b4ace1e`，**已上线** 2026-10-20）
+- 线上后端：`https://texas-poker.fanyuzhe-github.deno.net`（⚠️ 是 **.deno.net** 不是 .deno.dev）
+- 用户侧：app `texas-poker`（org `fanyuzhe-github`），KV 实例 `poker-kv` 已 Attach
+- 线上实测通过：`/api/ping`、GET/POST `/api/state`、KV 持久化、CORS 预检（`allow-origin:*`）、
+  SSE `/api/watch` 收到 ready + 初始 state + 写入后实时推送
 Gist 的麻烦点：token **90 天过期** + 换设备要**手动点恢复** → 用户要实时方案。
 
 **为什么不选 Supabase**（2026-10 官方页核实）：
@@ -103,6 +107,12 @@ Gist 的麻烦点：token **90 天过期** + 换设备要**手动点恢复** →
 - `storage.js` cloud 新增 `endpoint/room/liveEnabled/liveLastSyncAt/liveSyncedUpdatedAt`
 - `GameDetail.vue`：`handleConnectLive`/`pushLiveSnapshot`/`syncLiveOnStart`/`startLiveWatch`；结算末尾推一次
 - ⚠️ **前端零新 SDK**：fetch + EventSource，bundle 不膨胀（Supabase/云开发要塞上百 KB）
+- ⚠️ **新版 Deploy EA（console.deno.com）两个硬门槛**（2026-10-20 踩到）：
+  1. 仓库有 `package.json` 会被自动猜成「要跑 npm 构建」→ build 直接失败。修法：根目录加 `deno.json`
+     写死 `deploy.runtime = {type:"dynamic", entrypoint:"./server/main.ts"}`，**不写 install/build**（源码配置优先于面板）
+  2. **KV 必须手动 Provision 并 Assign 给 app**，`Deno.openKv()` 不会自动建库；不分配则部署成功但运行时挂
+- ⚠️ **`--unstable-kv` 不能传**（Deploy 运行参数固定）→ 本地/线上都靠 `deno.json` 的 `"unstable": ["kv"]` 开开关，
+  否则 Deno 2.9.7 下 `Deno.openKv is not a function`
 - ⚠️ SSE 会收到自己刚推上去的那份 → 用 `snapshot.updatedAt <= liveSyncedUpdatedAt` 滤掉回环
 - ⚠️ 房间码即口令（4~64 位字母数字），UI 默认点「随机」生成，别用能猜到的
 - ⚠️ 后端校验：`deno check --unstable-kv`；`setInterval` 类型是 `ReturnType<typeof setInterval>`，不是 number
