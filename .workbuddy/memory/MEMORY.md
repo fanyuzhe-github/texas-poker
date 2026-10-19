@@ -92,7 +92,8 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（勿升级）。build/dev 都要 `NODE_OP
 - 用户侧：app `texas-poker`（org `fanyuzhe-github`），KV 实例 `poker-kv` 已 Attach
 - 线上实测通过：`/api/ping`、GET/POST `/api/state`、KV 持久化、CORS 预检（`allow-origin:*`）、
   SSE `/api/watch` 收到 ready + 初始 state + 写入后实时推送
-Gist 的麻烦点：token **90 天过期** + 换设备要**手动点恢复** → 用户要实时方案。
+
+**为什么要上实时**（Gist 的两个麻烦点）：token **90 天过期** + 换设备要**手动点恢复**。
 
 **为什么不选 Supabase**（2026-10 官方页核实）：
 - Supabase / Appwrite 免费层都是 **7 天不活动自动暂停**，Appwrite 暂停满 90 天**删库**
@@ -104,9 +105,28 @@ Gist 的麻烦点：token **90 天过期** + 换设备要**手动点恢复** →
 落地：
 - `server/main.ts`：`GET/POST /api/state?room=`、`GET /api/watch`（SSE）、`/api/ping`；部署步骤见 `server/README.md`
 - `src/utils/live.js`：唯一发请求处 —— `normalizeEndpoint/isValidRoom/randomRoom/pingEndpoint/fetchState/pushState/subscribeState`
-- `storage.js` cloud 新增 `endpoint/room/liveEnabled/liveLastSyncAt/liveSyncedUpdatedAt`
-- `GameDetail.vue`：`handleConnectLive`/`pushLiveSnapshot`/`syncLiveOnStart`/`startLiveWatch`；结算末尾推一次
+- `storage.js` cloud 新增 `endpoint/room/liveEnabled/liveLastSyncAt/liveSyncedUpdatedAt/liveLastPushAt`
+- `GameDetail.vue`：`handleConnectLive`/`pushLiveSnapshot`/`syncLiveOnStart`/`startLiveWatch`/`pullLiveSnapshot`/`handleLiveWake`
 - ⚠️ **前端零新 SDK**：fetch + EventSource，bundle 不膨胀（Supabase/云开发要塞上百 KB）
+
+#### SSE 假死自愈（2026-10-20 修，commit `87351cf`）
+现象：**A 改的 B 收不到，B 改的 A 收得到**（单向）。先证伪后端：两条 curl SSE 并发都收到同一份写入，
+A 推送也确实到了线上（改底注线上跟着变）→ 真因是 **B 那条 SSE 假死**：休眠唤醒 / 切 WiFi /
+代理掐空闲连接后，连接"开着但收不到东西"，**EventSource 不报 onerror**，前端无从察觉。
+B→A 通是因为 POST 是主动请求，不走那条死连接。
+
+修法三条（缺一不可）：
+1. ⚠️ **服务端心跳必须是命名事件 `event: ping`**，不能是 `: ping` 注释行 ——
+   注释行不触发任何 JS 事件，前端收不到（20 秒一次）
+2. **前端假死看门狗**：15 秒查一次，70 秒没收到任何消息就 `close()` 重开一条。
+   重连瞬间服务端会推当前 state，落后的一方**自动补上** —— 这是修复的关键路径
+3. 切回页面（`visibilitychange`）/ `online` → 重连并主动 `fetchState` 补一次
+
+顺手堵的两个隐患：
+- ⚠️ **防抖抑制绝不能用 `liveLastSyncAt`** —— 收到云端数据也会刷新它，用它判断"刚推过就不推"
+  会把本机改动整个吞掉。改用只记上传的 **`liveLastPushAt`**
+- ⚠️ 抑制时也**不能直接 return 丢弃**，要延后再推 —— 丢一次这次改动就永远上不去了
+- 设置页显示连接状态（live/down/connecting）：断线要看得见，否则用户以为数据一直在同步
 - ⚠️ **自动上传的开关在 storage.js 的写入口**：`onLocalChange/muteLocalChange`。
   写操作散落在 25 处 `savePlayers/saveHistory/saveSettings/saveCards` 调用，逐处补同步必漏，
   所以在这四个函数里统一广播，GameDetail 订阅后 **1200ms 防抖**推一次；
