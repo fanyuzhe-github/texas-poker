@@ -2,7 +2,13 @@
 
 ## 技术栈 / 工程
 Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_OPTIONS=--openssl-legacy-provider`；装包加 `--registry=https://registry.npmmirror.com`。
-- 单测 `/tmp/pokertest/`（跨重启会丢）：`cp src/core/*.js` + `cp src/utils/live.js`，perl 补 `.js` 后缀、`"../core/sync"`→`"./sync.js"`。浏览器实测用 agent-browser。
+- **单测已入库 `tests/`（20 个文件，`5bb9dc7`）**：一条 `npm test` 跑全量。**不再有 /tmp/pokertest 副本，也不再需要 perl 补后缀**。
+  - 关键前提：`src/core/**` 内部相对 import **一律带 `.js` 后缀**（webpack 与 node 都认）。新增 core 文件必须照做，否则 node 直接 ERR_MODULE_NOT_FOUND。
+  - `src/core/package.json` 与 `tests/package.json` 都写了 `{"type":"module"}`，消掉 node 先按 CJS 解析再重来的警告。
+    ⚠️ **别给 `src/utils/` 加**：`cardArt.js` 用了 webpack 专属 `require.context`，声明成 module 会炸。
+  - `tests/.eslintrc.json` 显式声明 `globals.globalThis` —— 本机 `globals` 包是 11.12.0，`env: es2020` 注入不进来，靠 env 不够。
+  - 测试里定位素材目录用 `fileURLToPath(new URL(...))`，**不能用 `URL.pathname`**（不解码，中文路径变 `%E5%89%8D…` 直接 ENOENT）。
+  - 浏览器实测用 agent-browser；移动端真机模拟用 CDP（见「移动端适配」段）。
 - 远程：`origin`=gitee 旧库（**永不 push**）；**`github`=`git@github.com:fanyuzhe-github/texas-poker.git`（主远程，推 master）**。
 - 线上 <https://fanyuzhe-github.github.io/texas-poker/>（Public）。push 后 `.github/workflows/deploy.yml` 自动 build + `deploy-pages@v4`；`publicPath:"./"` 子路径下正好可用。
 - ⚠️ **`.npmrc` 的 `legacy-peer-deps=true` 别删**：`less-loader@11` peer 只收 `webpack@^5`，vue-cli 4 锁 `webpack@4.47.0`，npm 10 直接 ERESOLVE（`npm ci` 与兜底 `npm install` 双双失败）；本地这套 build 一直通，**别为此降级 less-loader**。
