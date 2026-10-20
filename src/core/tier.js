@@ -6,6 +6,9 @@
  *   -100 ≤ score ≤ 100  → 每 20 分一档，共 10 档（-100~-80 / -80~-60 / … / 80~100）
  *   score > 100         → 最高档（最后一档）
  * 合计 12 档。区间一律「含下不含上」，只有最上面的 80~100 含 100（100 之后就归最高档了）。
+ *
+ * 另有一个**不属于区间的特殊档**「荷官」（ZERO_TIER）：恰好 0 分的人才叫荷官，
+ * 赢了几块钱的仍算「小富即安」。详见 ZERO_TIER 的注释。
  */
 import { toCents } from "./money.js";
 
@@ -93,6 +96,20 @@ export const TIERS = [
   },
 ];
 
+/**
+ * 0 分专属档：一分没输没赢 —— 那是荷官，不是赌客。
+ *
+ * 它不是「0 ~ 20 分」那个区间，而是**恰好 0 分**这一个点；
+ * 赢了一块两块的仍归「小富即安」。所以它不占 TIERS 的 12 档，
+ * 只在 tierOf 里单独兜住，tierIndex 的区间计算完全不受影响。
+ */
+export const ZERO_TIER = {
+  id: "dealer",
+  label: "荷官",
+  desc: "一分没输没赢，你是来上班发牌的吧",
+  tone: "even",
+};
+
 /** 中间 10 档的第一档在 TIERS 里的下标（第 0 档是「小于 -100」） */
 const FIRST_BAND = 1;
 /** 中间 10 档的最后一档下标（最后一档是「大于 100」） */
@@ -119,7 +136,10 @@ export function tierIndex(cents) {
  * @returns {object} TIERS 里的某一档
  */
 export function tierOf(score) {
-  return TIERS[tierIndex(toCents(score))];
+  const cents = toCents(score);
+  // 恰好 0 分单独走「荷官」，其余按区间分档
+  if (cents === 0) return ZERO_TIER;
+  return TIERS[tierIndex(cents)];
 }
 
 /** 段位称号 */
@@ -134,8 +154,11 @@ export function tierTone(score) {
 
 /** 段位区间文案，单位「元」 */
 export function tierRangeText(score) {
-  const index = tierIndex(toCents(score));
+  const cents = toCents(score);
+  const index = tierIndex(cents);
   const min = (TIER_MIN_CENTS + (index - FIRST_BAND) * TIER_STEP_CENTS) / 100;
+  // 0 分那档没有区间，直接说「0 分」，别回「0 ~ +20 分」（荷官不是那个区间里的）
+  if (cents === 0) return "0 分";
   if (index === 0) return "低于 -100 分";
   if (index === TIERS.length - 1) return "高于 +100 分";
   if (index === LAST_BAND) return `+${min} ~ +100 分`;
