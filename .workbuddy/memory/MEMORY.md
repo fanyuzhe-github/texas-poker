@@ -93,6 +93,11 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 manifest / theme-color / apple-touch-icon / iOS 三个私有 meta。**不加 Service Worker**（单机记账要读最新账，缓存会给旧数）。
 - 图标源文件是脚本：`.workbuddy/scripts/make-pwa-icons.py`（纯 Python 写 PNG，零依赖）→ 输出到 `public/`。
   改图形调 `SPADE_PATH` / `graphic_scale` 后重跑即可，别手工 P 图覆盖。
+- ⚠️ **`favicon.ico` 也归这个脚本管**（`write_ico()`，16/32/48 三档 PNG-in-ICO）。它跟 manifest 那几张图是两回事：
+  只换 PWA 图标的话，浏览器标签页上仍是 vue-cli 自带的绿色 V（`a698f4f` 才补上）。
+  favicon 单独用 graphic_scale 0.76（比 0.68 大），16px 下才认得出。
+- ⚠️ **改完图标必须 bump `index.html` 里 favicon 的 `?v=`**：favicon 缓存极顽固，不换查询串用户那边几天都不更新。
+
 - ⚠️ **黑桃只能用贝塞尔轮廓，不能拿「三角 + 两个圆」拼**：圆与三角只能靠遮挡衔接，翼会又胖又钝、
   梗像根柱子从圆底下戳出来，缩小到 48px 就是一朵梅花（第一版就是这么翻车的）。
   现用 10 段 M/C 路径：尖顶 → 外扩翼 → 缓弧翼底 → 内凹收腰 → 外扩梗 → 镜像。
