@@ -799,6 +799,7 @@ import {
   removeCards as removeCardState,
 } from "../core/cards";
 import { loadDaily, saveDaily } from "../core/storage";
+import { trimHistory, HISTORY_MAX_BYTES } from "../core/history";
 import { exportJson, exportCsv, parseBackup, applyBackup } from "../core/backup";
 import { copyText } from "../core/clipboard";
 import {
@@ -856,6 +857,7 @@ export default {
       settling: false,
       cardState: null, // 卡牌存档（奖券 / 卡包 / 保底 / 碎片）
       lastGrants: [], // 本局发放的奖券明细，结算抽屉展示
+      historyTrimNotified: false, // 流水超出体积预算的提示，一次会话只说一次
       stageVisible: false, // 模块中心（全屏）
       stageModule: "dashboard", // 这次要落在哪个模块
       // 卡牌收藏里正在看谁的卡包。模块中心切模块会销毁重建，
@@ -1010,7 +1012,9 @@ export default {
         missing,
         this.playerFactory
       );
-      savePlayers(this.allPlayers);
+      if (!savePlayers(this.allPlayers)) {
+        this.$message.error("新玩家入库失败，可能是存储空间已满");
+      }
       this.refreshPlayerOptions();
     },
   },
@@ -1244,8 +1248,12 @@ export default {
       this.allPlayers = detach(this.allPlayers);
       // 今日榜里的归属标签要跟着更新，否则还挂着旧主账号的名字
       this.players = detach(this.players);
-      savePlayers(this.allPlayers);
+      const saved = savePlayers(this.allPlayers);
       this.refreshPlayerOptions();
+      if (!saved) {
+        this.$message.error("解除归属保存失败，可能是存储空间已满");
+        return;
+      }
       this.$message.success(`「${name}」已变回独立号，可以自己上桌了`);
     },
 
@@ -1265,7 +1273,11 @@ export default {
         this.selectPlayers,
         this.playerFactory
       );
-      savePlayers(this.allPlayers);
+      // 落盘失败也照样开局：已经录入的筹码不能因为存不下就丢掉，
+      // 但必须让用户知道这一局的数据可能留不住
+      if (!savePlayers(this.allPlayers)) {
+        this.$message.error("玩家名册保存失败，可能是存储空间已满");
+      }
 
       // 今日榜只记真正上桌的号，主账号不进榜（它只在总榜里做汇总）
       this.players = ensurePlayers(
@@ -1455,16 +1467,38 @@ export default {
         transfers: this.transfers,
       };
 
-      this.history = [game, ...this.history].slice(0, 200);
+      // 流水按体积保留（core/history.js），不再硬砍 200 局：
+      // 被砍掉的局是赛季积分 / 纪录榜 / 勋章重放的输入，少了就是静默算错账。
+      const appended = trimHistory([game, ...this.history]);
+      this.history = appended.list;
       if (!saveHistory(this.history)) {
         this.$message.error("对局流水保存失败，可能是存储空间已满");
       }
+      this.notifyHistoryTrim(appended);
 
       this.grantCards(game, prevRound, prevHistory);
 
       // 战绩、名册、卡包此时都已落盘，静默推一份到云端。
       // 这一步在结算流程最末尾，成功与否都不影响本局结果。
       this.autoBackupToCloud();
+    },
+
+    /**
+     * 流水超出体积预算时明确告知用户。
+     *
+     * 裁剪只会砍掉最老的几局，但全期纪录 / 勋章墙是按**现存流水**重放的，
+     * 少了那几局就会少算 —— 老版本 `slice(0, 200)` 最要命的就是不吭声。
+     * 一次会话只提示一次：真到了这个体量，每局都弹等于噪音。
+     */
+    notifyHistoryTrim({ dropped, bytes, list }) {
+      if (!dropped || this.historyTrimNotified) return;
+      this.historyTrimNotified = true;
+      const budgetKb = Math.round(HISTORY_MAX_BYTES / 1024);
+      this.$message.warning(
+        `对局流水已超过本机上限（约 ${budgetKb} KB），最早的 ${dropped} 局不再计入统计。` +
+          `当前保留 ${list.length} 局 / ${Math.max(1, Math.round(bytes / 1024))} KB，` +
+          "建议先「导出备份」留档。"
+      );
     },
 
     /**
@@ -1699,15 +1733,23 @@ export default {
       const next = this.history.filter((game) => game.id !== id);
       if (next.length === this.history.length) return;
       this.history = next;
-      saveHistory(this.history);
+      const saved = saveHistory(this.history);
       this.rebuildRankings();
+      if (!saved) {
+        this.$message.error("流水保存失败，刷新页面后这局会重新出现");
+        return;
+      }
       this.$message.success("已删除该局记录，相关战绩已同步回滚");
     },
 
     clearHistory() {
       this.history = [];
-      saveHistory(this.history);
+      const saved = saveHistory(this.history);
       this.rebuildRankings();
+      if (!saved) {
+        this.$message.error("流水保存失败，刷新页面后记录会重新出现");
+        return;
+      }
       this.$message.success("对局流水已清空，全部战绩已归零");
     },
 
@@ -1763,11 +1805,14 @@ export default {
 
       // 卡包也要跟着改名，否则改名后奖券和卡牌会凭空消失
       this.cardState = renameCardState(this.cardState, oldName, newName);
-      saveCards(this.cardState);
-
-      savePlayers(this.allPlayers);
-      saveHistory(this.history);
+      const savedCards = saveCards(this.cardState);
+      const savedPlayers = savePlayers(this.allPlayers);
+      const savedHistory = saveHistory(this.history);
       this.refreshPlayerOptions();
+      if (!savedCards || !savedPlayers || !savedHistory) {
+        this.$message.error("改名保存失败，可能是存储空间已满，刷新后会退回旧名字");
+        return;
+      }
       this.$message.success("昵称已更新，历史流水同步完成");
     },
 
@@ -1789,10 +1834,13 @@ export default {
 
       // 卡包一并清掉，避免留下无主存档
       this.cardState = removeCardState(this.cardState, name);
-      saveCards(this.cardState);
-
-      savePlayers(this.allPlayers);
+      const savedCards = saveCards(this.cardState);
+      const savedPlayers = savePlayers(this.allPlayers);
       this.refreshPlayerOptions();
+      if (!savedCards || !savedPlayers) {
+        this.$message.error("删除保存失败，可能是存储空间已满，刷新后玩家会重新出现");
+        return;
+      }
       this.$message.success(
         subCount
           ? `已删除「${name}」，其 ${subCount} 个子账号已升级为独立号`
@@ -1823,7 +1871,10 @@ export default {
       }
 
       this.settings = { ...this.settings, baseChips };
-      saveSettings(this.settings);
+      if (!saveSettings(this.settings)) {
+        this.$message.error("设置保存失败，可能是存储空间已满");
+        return;
+      }
       this.settingsVisible = false;
 
       // 已开局的情况下同步刷新投入额（剩余筹码由玩家重新清点）
@@ -1849,19 +1900,32 @@ export default {
 
     /** 把云端存档写回本机，并立刻落盘 + 刷新界面 */
     applySnapshot(snapshot) {
+      // 云端存档可能是别的设备按更高预算存的，落地前先按本机预算收一遍
+      const restored = trimHistory(snapshot.history);
       // 数据就是从云端下来的，别再推回去 —— 时间戳相同会被服务端拒，白弹一条告警
       muteLocalChange(() => {
         this.allPlayers = snapshot.players;
-        this.history = snapshot.history;
+        this.history = restored.list;
         this.settings = snapshot.settings;
         this.cardState = snapshot.cards;
-        savePlayers(this.allPlayers);
-        saveHistory(this.history);
-        saveSettings(this.settings);
-        saveCards(this.cardState);
+        // 恢复是「丢数据」场景里最不能静默失败的一步：写不进去就等于白恢复
+        const results = [
+          savePlayers(this.allPlayers),
+          saveHistory(this.history),
+          saveSettings(this.settings),
+          saveCards(this.cardState),
+        ];
+        if (results.includes(false)) {
+          this.$message.error("云端数据写入本机失败，可能是存储空间已满");
+        }
         this.settingsForm = { ...this.settings };
         this.refreshPlayerOptions();
       });
+      if (restored.dropped) {
+        this.$message.warning(
+          `云端存档超过本机流水上限，最早的 ${restored.dropped} 局没有恢复`
+        );
+      }
     },
 
     /**
@@ -2024,7 +2088,11 @@ export default {
       // 换了 token 就把 gistId 忘掉，下次上传重新按文件名认领。
       // 同账号换 token 能认回同一份；换成别账号的 token 则当作新网盘，不会误写旧存档。
       this.cloud = { ...prev, token, gistId: changed ? "" : prev.gistId };
-      saveCloud(this.cloud);
+      if (!saveCloud(this.cloud)) {
+        // token 没落盘 = 刷新就丢，用户会以为已经连上了，必须说清楚
+        this.$message.error("token 保存到本机失败，可能是存储空间已满");
+        return;
+      }
       this.cloudTokenEditing = false;
       this.$message.success(
         changed
@@ -2197,14 +2265,26 @@ export default {
     },
 
     doImport(data, mode) {
-      const { players, history, cards } = applyBackup(data, mode);
+      const { players, history, cards, dropped, saved } = applyBackup(data, mode);
+      // 一律以落盘后的真实数据为准：写失败时内存里是新的、磁盘上是旧的，
+      // 直接拿内存数据展示会骗人
       this.allPlayers = loadPlayers();
       this.history = loadHistory();
       this.cardState = loadCards();
       this.refreshPlayerOptions();
+      if (!saved) {
+        this.$message.error("导入写入本机失败，可能是存储空间已满，请先清理后重试");
+        return;
+      }
       this.$message.success(
         `导入完成：${players} 位玩家、${history} 条对局流水、${cards} 份卡包`
       );
+      // 存档本身超预算时如实说明，不然用户会以为全部历史都在
+      if (dropped) {
+        this.$message.warning(
+          `存档超过本机流水上限，最早的 ${dropped} 局没有导入（当前保留 ${history} 局）`
+        );
+      }
     },
 
     shuffle(array) {

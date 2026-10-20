@@ -16,6 +16,7 @@ import {
 import { format } from "./money.js";
 import { buildMainRanking } from "./ranking.js";
 import { normalizeCardState, mergeCardStates } from "./cards.js";
+import { trimHistory } from "./history.js";
 
 /** 组装一份完整备份数据 */
 export function buildBackup() {
@@ -155,7 +156,8 @@ export function parseBackup(text) {
  * 落地备份数据。
  * @param {object} data parseBackup 通过的 data
  * @param {'replace'|'merge'} mode 覆盖或合并
- * @returns {{players: number, history: number}}
+ * @returns {{players: number, history: number, cards: number, dropped: number, saved: boolean}}
+ *   dropped 是被体积预算裁掉的老局数，saved=false 说明有键没写进去
  */
 export function applyBackup(data, mode = "replace") {
   const incomingPlayers = (Array.isArray(data.players) ? data.players : [])
@@ -181,11 +183,21 @@ export function applyBackup(data, mode = "replace") {
       .sort((a, b) => b.time - a.time);
   } else {
     players = dedupePlayers(incomingPlayers);
-    history = incomingHistory;
+    // 导入的备份不一定按时间倒序（手改过 / 更早版本导出），
+    // 而裁剪是按「从新往旧装」算的，先统一排序再裁，否则会砍错局
+    history = incomingHistory
+      .slice()
+      .sort((a, b) => (Number(b.time) || 0) - (Number(a.time) || 0));
   }
 
-  savePlayers(players);
-  saveHistory(history);
+  // 同一套体积预算：换设备导入一份超大存档，也不能把 localStorage 撑爆
+  const trimmed = trimHistory(history);
+  history = trimmed.list;
+
+  const saved = [
+    savePlayers(players),
+    saveHistory(history),
+  ].every(Boolean);
   if (data.settings && typeof data.settings === "object") {
     saveSettings(data.settings);
   }
@@ -194,12 +206,14 @@ export function applyBackup(data, mode = "replace") {
   const incomingCards = normalizeCardState(data.cards);
   const cards =
     mode === "merge" ? mergeCardStates(loadCards(), incomingCards) : incomingCards;
-  saveCards(cards);
+  const savedCards = saveCards(cards);
 
   return {
     players: players.length,
     history: history.length,
     cards: Object.keys(cards.players).length,
+    dropped: trimmed.dropped,
+    saved: saved && savedCards,
   };
 }
 

@@ -1,7 +1,11 @@
 <template>
   <div class="history">
     <div class="history__toolbar">
-      <span class="history__count">共 {{ history.length }} 局</span>
+      <span class="history__count">
+        共 {{ history.length }} 局<template v-if="hasMore">
+          · 当前显示最近 {{ visibleCount }} 局</template
+        >
+      </span>
       <el-button
         type="danger"
         plain
@@ -17,7 +21,7 @@
 
     <el-collapse v-else v-model="activeNames" accordion>
       <el-collapse-item
-        v-for="game in history"
+        v-for="game in shown"
         :key="game.id"
         :name="game.id"
       >
@@ -76,6 +80,12 @@
         </div>
       </el-collapse-item>
     </el-collapse>
+
+    <div v-if="hasMore" class="history__more">
+      <el-button size="mini" plain icon="el-icon-arrow-down" @click="loadMore"
+        >加载更早的 {{ nextBatch }} 局</el-button
+      >
+    </div>
   </div>
 </template>
 
@@ -83,6 +93,9 @@
 import { format, formatSigned } from "../core/money";
 import { formatTransfers } from "../core/settlement";
 import { copyText } from "../core/clipboard";
+
+/** 每次多铺多少局 */
+const PAGE_SIZE = 20;
 
 export default {
   name: "HistoryPanel",
@@ -95,11 +108,28 @@ export default {
   data() {
     return {
       activeNames: "",
+      // 只渲染最近的一批。流水不再有 200 局上限，几千局全铺出来
+      // 就是几千个 el-table（折叠状态也会渲染），在手机上直接卡死。
+      visibleCount: PAGE_SIZE,
     };
+  },
+  computed: {
+    shown() {
+      return this.history.slice(0, this.visibleCount);
+    },
+    hasMore() {
+      return this.history.length > this.visibleCount;
+    },
+    nextBatch() {
+      return Math.min(PAGE_SIZE, this.history.length - this.visibleCount);
+    },
   },
   methods: {
     format,
     formatSigned,
+    loadMore() {
+      this.visibleCount += PAGE_SIZE;
+    },
     formatTime(time) {
       const date = new Date(time);
       if (Number.isNaN(date.getTime())) return "未知时间";
@@ -161,6 +191,10 @@ export default {
 .history__count {
   font-size: 13px;
   color: #909399;
+}
+.history__more {
+  padding: 14px 0 4px;
+  text-align: center;
 }
 .history__time {
   font-weight: 600;

@@ -13,7 +13,8 @@ export const SNAPSHOT_VERSION = 1;
 
 /**
  * gist 单文件建议上限（字节）。API 读取时内容超过 1MB 会被截断，
- * 留足余量提前告警。流水本身有 200 局上限，正常用不到这条线。
+ * 留足余量提前告警。流水按体积保留（HISTORY_MAX_BYTES = 600KB，
+ * 见 history.js），正常用不到这条线。
  */
 export const SNAPSHOT_SIZE_WARN = 900 * 1024;
 
