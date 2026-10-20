@@ -72,6 +72,22 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 - ⚠️ `.humane-model` 是 absolute，≤1024 必须回文档流，否则压住结算按钮。
 - 真机验证用 CDP：`--remote-debugging-port=9222` + `Emulation.setDeviceMetricsOverride(mobile:true)` + `Runtime.evaluate` 改 Vue 实例截图；Chrome 要 `--no-sandbox --proxy-server='direct://'`（本机代理会把 127.0.0.1 劫持成 502），进程得 `run_in_background` 起。
 
+## 流水容量（`2023c1b`，别再改回计数上限）
+`core/history.js`：`gameBytes` 按 **UTF-8 字节**（中文 3 字节，跟 gist 实际存储对齐）+ `trimHistory(list, maxBytes)`。
+- `HISTORY_MAX_BYTES = 600KB`（≈ 2000 局，压在 gist `SNAPSHOT_SIZE_WARN=900KB` 之下）。**从最新往前装**，只保留
+  连续前缀，最新一局即使单局超预算也不裁。测试 `test-history.js` 30 项。
+- ⚠️ 老写法 `[game,...history].slice(0,200)` 是**静默算错账**：第 201 局起赛季积分 / 记录榜 / 勋章重放全少算。
+  任何「限制流水条数」的写法都不许再出现，只能限体积，且 `dropped>0` 必须告诉用户（`notifyHistoryTrim`，一次会话一次）。
+- 云端恢复（`applySnapshot`）、本地导入（`applyBackup`）同样过 `trimHistory`；导入前先按 `time` 倒序排，否则裁剪会砍错局。
+- ⚠️ **`HistoryPanel` 必须分页**（20 局 + 「加载更早的 20 局」）：`el-collapse-item` 折叠时内部 `el-table` 也会渲染，
+  上限放开后几千局直接卡死手机。
+
+## 落盘返回值（`2023c1b` 起）
+`savePlayers/saveHistory/saveCards/saveSettings/saveDaily/saveCloud` 都返回 boolean，**调用方必须接**。
+- 已有检查：结算、改名、删玩家、删局、清空流水、导入、云端恢复、底注设置、保存 token、新玩家入库、解除归属。
+- 约定：写失败 → `$message.error` 说清「刷新后会退回/复原」，**不要**再提示「已保存」。
+  唯一例外是 `resetSeat` 里名册存不下：照样开局（已录的筹码不能丢），只报警告。
+
 ## 云同步
 **用户场景（本人确认）**：**单机记账**，一次只有一台电脑在用。痛点只有 **怕数据丢** + **换设备能拿到之前的数据**；**明确不需要多人实时同步**。
 → 结论：**Gist 冷备份是主路径**；Deno 实时同步 **已停用**（用户不愿为解冻绑卡，且长连接会烧穿免费额度）。
@@ -86,7 +102,7 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
   **自动备份一律不覆盖**，手动上传也要先弹确认。否则新设备会拿空数据把真数据抹掉（本项目最容易出事的一步）。
 - `checkCloudOnStart()`：打开页面自动比对云端，新设备（基线 0）直接弹恢复提示 —— 「换台电脑就能拿到数据」的落地处。
 - 本地任何改动走 `onLocalChange` → **3 秒防抖**自动备份（`scheduleCloudBackup`）。
-- ⚠️ 不需要压缩库（`history` 有 `slice(0,200)` 上限，碰不到 gist 1MB 截断线）。恢复先弹确认；自动备份失败弹
+- ⚠️ 不需要压缩库（`history` 按 600KB 体积保留，见 `core/history.js`，碰不到 gist 1MB 截断线）。恢复先弹确认；自动备份失败弹
   **warning**（静默会让人以为安全）；`daily` 不进云；PAT 只勾 `gists`，**别让用户把 token 发给 AI**。
   classic PAT 可选 **No expiration**，省掉 90 天过期。
 - ⚠️ **必须 classic token**：细粒度 token（`github_pat_` 开头）**没有 gist 权限**（GitHub 至今没给，
