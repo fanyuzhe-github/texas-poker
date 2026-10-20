@@ -73,6 +73,10 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 - ⚠️ 不需要压缩库（`history` 有 `slice(0,200)` 上限，碰不到 gist 1MB 截断线）。恢复先弹确认；自动备份失败弹
   **warning**（静默会让人以为安全）；`daily` 不进云；PAT 只勾 `gists`，**别让用户把 token 发给 AI**。
   classic PAT 可选 **No expiration**，省掉 90 天过期。
+- ⚠️ **必须 classic token**：细粒度 token（`github_pat_` 开头）**没有 gist 权限**（GitHub 至今没给，
+  生成时也勾不到）→ `isFineGrainedToken()` 在保存时拦下并提示换 classic（`ghp_` 开头）。
+- ⚠️ 换 token 走设置页「更换 token」（`cloudTokenEditing`）；保存时**清掉 `gistId`** 让它重新按文件名
+  认领（同账号认回同一份；换账号 = 换网盘，不会误写旧存档）。别改回「存过 token 就藏起输入框」。
 
 ### Deno 实时同步（`b4ace1e`，**2026-10-20 起停用**，`https://texas-poker.fanyuzhe-github.deno.net`）
 ⚠️ 后缀 **.deno.net** 不是 .deno.dev。org `fanyuzhe-github` / app `texas-poker` / KV `poker-kv` 已 Attach。
