@@ -56,6 +56,14 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 `theme.css`（main.js 里**必须排在 element 之后**）：深海军蓝顶栏 + 香槟金，主色 #3a55c8（避开绿=跌色），页面底 #eef1f8，卡片 16 圆角。
 - 主页 toolbar 一行预算：1440 下 main 523 + tools 770 ≤ 1358，**别把 tool 字号加回 14**。⚠️ `el-row/el-col` 是 float，`align-items:stretch` 无效。
 
+## 响应式（`92cf4c6`）
+`src/mixins/responsive.js` 是**唯一**断点来源：`isMobile`(≤768) / `isCompact`(≤1024)。
+- ⚠️ 手机适配靠**换结构**不是缩宽度：座位表 6 列要 616px，`isCompact` 直接渲染 `.seat-list` 卡片（`minmax(240px,1fr)` 自动 1→2 列）；玩家管理同理换卡片列表。
+- 表格类用 `compact` prop 砍列：`RankTable` 砍胜率/状态，`SeasonRank` 砍胜/负·胜率·连胜·最佳单局·出勤（留名次/玩家/积分）。
+- ⚠️ `el-dialog` 的 width 是内联 style → 只能在 theme.css 用 `!important`；≤768 统一 `100vw-24` + flex 列布局（头/底固定、body 自滚）。
+- ⚠️ `.humane-model` 是 absolute，≤1024 必须回文档流，否则压住结算按钮。
+- 真机验证用 CDP：`--remote-debugging-port=9222` + `Emulation.setDeviceMetricsOverride(mobile:true)` + `Runtime.evaluate` 改 Vue 实例截图；Chrome 要 `--no-sandbox --proxy-server='direct://'`（本机代理会把 127.0.0.1 劫持成 502），进程得 `run_in_background` 起。
+
 ## 云同步
 **用户场景（本人确认）**：**单机记账**，一次只有一台电脑在用。痛点只有 **怕数据丢** + **换设备能拿到之前的数据**；**明确不需要多人实时同步**。
 → 结论：**Gist 冷备份是主路径**；Deno 实时同步 **已停用**（用户不愿为解冻绑卡，且长连接会烧穿免费额度）。
