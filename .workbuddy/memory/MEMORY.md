@@ -57,14 +57,24 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 - 主页 toolbar 一行预算：1440 下 main 523 + tools 770 ≤ 1358，**别把 tool 字号加回 14**。⚠️ `el-row/el-col` 是 float，`align-items:stretch` 无效。
 
 ## 云同步
-**用户场景**：一个人记账，牌友不写数据。痛点只有**怕数据丢** + **换设备接着用**，不需要多人实时、不需要分享。
+**用户场景（本人确认）**：**单机记账**，一次只有一台电脑在用。痛点只有 **怕数据丢** + **换设备能拿到之前的数据**；**明确不需要多人实时同步**。
+→ 结论：**Gist 冷备份是主路径**；Deno 实时同步 **已停用**（用户不愿为解冻绑卡，且长连接会烧穿免费额度）。
 
-### Gist 冷备份（`6ed3c92`）
-- `core/sync.js` 纯函数（`test-sync.js` 43 项）+ `utils/gist.js`（唯一发请求，15s 超时，状态码转中文）。
+### Gist 冷备份（`6ed3c92`，`83d82d7` 修好换设备）
+- `core/sync.js` 纯函数（`test-sync.js` 43 项）+ `utils/gist.js`（唯一发请求，15s 超时，状态码转中文，`test-gist.js` 10 项）。
 - `STORAGE_KEYS.cloud="poker:cloud"`：`token/gistId/lastSyncAt/autoBackup/syncedUpdatedAt`。
-- ⚠️ 不需要压缩库（`history` 有 `slice(0,200)` 上限，碰不到 gist 1MB 截断线）。恢复先弹确认；自动备份失败弹 **warning**（静默会让人以为安全）；`daily` 不进云；PAT 只勾 `gists`，**别让用户把 token 发给 AI**。
+- ⚠️ **换设备的关键 = `findGistId()`**：gistId 只存在第一台电脑的本机，新设备光有 token 找不到存档
+  → 列出该 token 名下 gist，按备份文件名 `texas-poker-backup.json` 认领（多份取 `updated_at` 最新的）。
+  上传 / 恢复 / 启动检查**三处都先认领**，认不到才新建。
+- ⚠️ **安全闸 `guardBeforeUpload`**：本机 `syncedUpdatedAt` 为 0（没对过账）而云端已有存档 = 本机是新设备，
+  **自动备份一律不覆盖**，手动上传也要先弹确认。否则新设备会拿空数据把真数据抹掉（本项目最容易出事的一步）。
+- `checkCloudOnStart()`：打开页面自动比对云端，新设备（基线 0）直接弹恢复提示 —— 「换台电脑就能拿到数据」的落地处。
+- 本地任何改动走 `onLocalChange` → **3 秒防抖**自动备份（`scheduleCloudBackup`）。
+- ⚠️ 不需要压缩库（`history` 有 `slice(0,200)` 上限，碰不到 gist 1MB 截断线）。恢复先弹确认；自动备份失败弹
+  **warning**（静默会让人以为安全）；`daily` 不进云；PAT 只勾 `gists`，**别让用户把 token 发给 AI**。
+  classic PAT 可选 **No expiration**，省掉 90 天过期。
 
-### Deno 实时同步（`b4ace1e`，`https://texas-poker.fanyuzhe-github.deno.net`）
+### Deno 实时同步（`b4ace1e`，**2026-10-20 起停用**，`https://texas-poker.fanyuzhe-github.deno.net`）
 ⚠️ 后缀 **.deno.net** 不是 .deno.dev。org `fanyuzhe-github` / app `texas-poker` / KV `poker-kv` 已 Attach。
 - `server/main.ts`：`GET/POST /api/state?room=`（GET 支持 `&since=`）、`/api/ping`、`/api/watch`（SSE，**已弃用**）。
 - `src/utils/live.js` 唯一发请求：`normalizeEndpoint/isValidRoom/randomRoom/pingEndpoint/fetchState/pushState/pollState`。
