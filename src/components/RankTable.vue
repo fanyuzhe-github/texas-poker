@@ -57,15 +57,17 @@
     <el-table-column
       prop="score"
       label="胜/负"
-      :width="compact ? 62 : 70"
+      :width="compact ? 62 : 66"
       :formatter="formatRecord"
     ></el-table-column>
     <!-- 窄屏收掉「胜率」「状态」两列：留着就得横向拖表格，胜/负本身已经含了这两项的大半信息 -->
+    <!-- 「100.0%」实测 48px + 左右各 10px padding，62px 列宽只剩 42 → 必折行，给到 74 才放得下 -->
     <el-table-column
       v-if="!compact"
       prop="score"
       label="胜率"
-      width="62"
+      width="74"
+      class-name="col-winrate"
       :formatter="formatWinRate"
     ></el-table-column>
     <el-table-column v-if="!compact" label="状态" width="62">
@@ -197,6 +199,10 @@ export default {
 .score {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+/* 胜率「100.0%」也不许折行：万一以后改窄列宽，宁可撑破也不换行 */
+::v-deep .col-winrate .cell {
+  white-space: nowrap;
 }
 .score--win {
   color: #f56c6c;
