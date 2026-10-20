@@ -10,9 +10,9 @@
  * 3. 归集口径同总榜：上桌的是子账号，战绩一律用 mainOf() 归到主账号头上。
  * 4. 金额全程走 money.js 的整数「分」，不在这一层裸写浮点运算。
  */
-import { toCents, fromCents } from "./money";
-import { mainOf } from "./ranking";
-import { sortByTime, formatClock } from "./stats";
+import { toCents, fromCents } from "./money.js";
+import { mainOf } from "./ranking.js";
+import { sortByTime, formatClock } from "./stats.js";
 
 /** 近况格子最多画多少场 */
 export const RECENT_LIMIT = 12;

@@ -26,10 +26,10 @@
  * 8. 依赖方向：achievements → season / streak / stats / ranking，单向无环。
  *    记录榜里已经下线的「铁人出勤」那套（出勤王 / 连续出勤 / 元老）**不要在本文件复活**。
  */
-import { toCents, fromCents, format, formatSigned } from "./money";
-import { mainOf } from "./ranking";
-import { sortByTime, formatClock } from "./stats";
-import { buildStreakSequences, STREAK_LABEL } from "./streak";
+import { toCents, fromCents, format, formatSigned } from "./money.js";
+import { mainOf } from "./ranking.js";
+import { sortByTime, formatClock } from "./stats.js";
+import { buildStreakSequences, STREAK_LABEL } from "./streak.js";
 import {
   listSeasons,
   buildSeasonReport,
@@ -37,7 +37,7 @@ import {
   isSeasonClosed,
   seasonEndAt,
   formatDate,
-} from "./season";
+} from "./season.js";
 
 /** 底注脏数据时的兜底：10 元 */
 const DEFAULT_STAKE = 1000;

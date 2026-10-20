@@ -46,15 +46,15 @@
  * 所以 stats.js / streak.js / season.js **都不能反过来 import 本文件**。
  */
 
-import { toCents, fromCents, formatSigned } from "./money";
-import { mainOf } from "./ranking";
-import { sortByTime, formatClock } from "./stats";
-import { listSeasons, buildSeasonReport } from "./season";
+import { toCents, fromCents, formatSigned } from "./money.js";
+import { mainOf } from "./ranking.js";
+import { sortByTime, formatClock } from "./stats.js";
+import { listSeasons, buildSeasonReport } from "./season.js";
 import {
   buildStreakBoard,
   buildStreakSequences,
   formatStreak,
-} from "./streak";
+} from "./streak.js";
 
 /** 胜率榜准入门槛（局数） */
 export const RATE_MIN_GAMES = 5;

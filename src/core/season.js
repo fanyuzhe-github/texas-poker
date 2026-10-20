@@ -9,10 +9,10 @@
  * 赛季积分一律从「对局流水」重算，不用玩家身上那份全局累计积分 ——
  * 后者是所有赛季混在一起的，拆不出赛季来。
  */
-import { toCents, fromCents } from "./money";
-import { mainOf } from "./ranking";
-import { sortByTime, formatClock } from "./stats";
-import { buildStreakBoard } from "./streak";
+import { toCents, fromCents } from "./money.js";
+import { mainOf } from "./ranking.js";
+import { sortByTime, formatClock } from "./stats.js";
+import { buildStreakBoard } from "./streak.js";
 
 export const SEASONS = [
   { key: "spring", label: "春", months: [3, 4, 5] },

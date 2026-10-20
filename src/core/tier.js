@@ -7,7 +7,7 @@
  *   score > 100         → 最高档（最后一档）
  * 合计 12 档。区间一律「含下不含上」，只有最上面的 80~100 含 100（100 之后就归最高档了）。
  */
-import { toCents } from "./money";
+import { toCents } from "./money.js";
 
 /** 分档下限 / 上限 / 步长，单位「分」 */
 export const TIER_MIN_CENTS = -10000;

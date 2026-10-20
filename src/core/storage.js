@@ -2,9 +2,9 @@
  * 持久化层：所有 localStorage 读写都必须经过这里。
  * 目标：任何一条脏数据都不允许把页面搞白屏。
  */
-import { yuan } from "./money";
-import { normalizeCardState } from "./cards";
-import { normalizeAvatar } from "./avatar";
+import { yuan } from "./money.js";
+import { normalizeCardState } from "./cards.js";
+import { normalizeAvatar } from "./avatar.js";
 
 /** 数据结构版本，后续字段变更时递增并补充 migrate 分支 */
 export const SCHEMA_VERSION = 4;

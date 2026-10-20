@@ -1,0 +1,14 @@
+{
+  "env": {
+    "node": true,
+    "es2020": true
+  },
+  "globals": {
+    "globalThis": "readonly"
+  },
+  "parserOptions": {
+    "parser": "babel-eslint",
+    "ecmaVersion": 2020,
+    "sourceType": "module"
+  }
+}

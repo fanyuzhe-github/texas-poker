@@ -2,7 +2,7 @@
  * 结算核心：纯函数，不依赖 Vue / DOM，方便单独验证与复用。
  * 内部统一用「分」参与运算，避免浮点误差导致平账失败。
  */
-import { toCents, fromCents } from "./money";
+import { toCents, fromCents } from "./money.js";
 
 /**
  * 校验本局录入的剩余筹码总额是否与投入总额一致。

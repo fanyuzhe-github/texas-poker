@@ -14,7 +14,7 @@
  * 历史值 "builtin:xxx"（24 只小动物）已下线，normalizeAvatar 会把它清掉回落到默认色块。
  */
 
-import { CARD_POOL, cardById } from "./cardPool";
+import { CARD_POOL, cardById } from "./cardPool.js";
 
 /* ------------------------------------------------------------------ */
 /* 卡牌头像                                                            */

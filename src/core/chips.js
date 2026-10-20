@@ -12,7 +12,7 @@
  * 最小面值 50 正好等于 0.05，换算到「分」全是整数，
  * 所以沿用 money.js 的整数运算，不会出现 0.1 + 0.2 之类的浮点误差。
  */
-import { toCents, fromCents } from "./money";
+import { toCents, fromCents } from "./money.js";
 
 export const CHIP_DENOMINATIONS = [
   { key: "c1000", label: "1000", chips: 1 },

@@ -1,7 +1,7 @@
 /**
  * 排行榜累计逻辑：与结算解耦，纯函数。
  */
-import { toCents, fromCents } from "./money";
+import { toCents, fromCents } from "./money.js";
 
 /**
  * 把一局的结果累计到排行榜上（不修改入参，返回新数组）。

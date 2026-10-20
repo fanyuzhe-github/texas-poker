@@ -26,9 +26,9 @@
  *    由调用方传 `newRecords`（用 records.js 的 `buildNewRecords` 对比前后两份流水），
  *    保持单向无环。⚠️ 别为了算纪录在本文件 import records.js。
  */
-import { POOL_BY_STAR, CARD_POOL, CARD_TOTAL, cardById } from "./cardPool";
-import { mainOf } from "./ranking";
-import { toCents } from "./money";
+import { POOL_BY_STAR, CARD_POOL, CARD_TOTAL, cardById } from "./cardPool.js";
+import { mainOf } from "./ranking.js";
+import { toCents } from "./money.js";
 
 /* ------------------------------------------------------------------ */
 /* 常量                                                                */

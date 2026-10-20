@@ -1,0 +1,4 @@
+{
+  "//": "只作用于 tests/ 目录：让 node 把这里的 .js 当 ES module 解析。根目录是 vue-cli 的 CJS 环境，不能在根 package.json 加 type:module。",
+  "type": "module"
+}

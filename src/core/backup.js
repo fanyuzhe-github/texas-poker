@@ -12,10 +12,10 @@ import {
   loadCards,
   saveCards,
   normalizePlayer,
-} from "./storage";
-import { format } from "./money";
-import { buildMainRanking } from "./ranking";
-import { normalizeCardState, mergeCardStates } from "./cards";
+} from "./storage.js";
+import { format } from "./money.js";
+import { buildMainRanking } from "./ranking.js";
+import { normalizeCardState, mergeCardStates } from "./cards.js";
 
 /** 组装一份完整备份数据 */
 export function buildBackup() {

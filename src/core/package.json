@@ -1,0 +1,5 @@
+{
+  "//": "只作用于 src/core/。core 是纯 ESM 纯函数层，声明 module 类型后 node 能直接跑 tests/，不再先按 CJS 解析失败再重来（MODULE_TYPELESS_PACKAGE_JSON 警告）。",
+  "//2": "⚠️ 别给 src/utils 加：cardArt.js 用了 webpack 专属的 require.context，声明成 module 会炸。",
+  "type": "module"
+}

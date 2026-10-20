@@ -6,8 +6,8 @@
  * - players（总榜）：用于「当下状态」，例如累计积分、胜负场次
  * 两者互相对照：曲线终点 ≈ 总榜积分，若不一致说明中途删过号 / 合并过数据。
  */
-import { toCents, fromCents } from "./money";
-import { mainOf, buildMainRanking } from "./ranking";
+import { toCents, fromCents } from "./money.js";
+import { mainOf, buildMainRanking } from "./ranking.js";
 
 /** 曲线最多画几条：人多的时候全画会糊成一团 */
 export const MAX_SERIES = 8;
