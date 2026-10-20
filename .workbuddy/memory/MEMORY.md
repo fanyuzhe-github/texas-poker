@@ -88,6 +88,15 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 - 约定：写失败 → `$message.error` 说清「刷新后会退回/复原」，**不要**再提示「已保存」。
   唯一例外是 `resetSeat` 里名册存不下：照样开局（已录的筹码不能丢），只报警告。
 
+## PWA / 添加到主屏幕（`34e1e5d`）
+`public/manifest.json`（`start_url "./"`、`display: standalone`、192/512/maskable 三张图）+ `index.html` 里的
+manifest / theme-color / apple-touch-icon / iOS 三个私有 meta。**不加 Service Worker**（单机记账要读最新账，缓存会给旧数）。
+- 图标源文件是脚本：`.workbuddy/scripts/make-pwa-icons.py`（纯 Python 写 PNG，零依赖）→ 输出到 `public/`。
+  改图形调 `in_spade()` / `graphic_scale` 后重跑即可，别手工 P 图覆盖。
+- ⚠️ `apple-mobile-web-app-status-bar-style` 用 `black`，`black-translucent` 会让内容顶到状态栏底下。
+- ⚠️ manifest 与所有图标路径必须相对（`<%= BASE_URL %>`），否则 GitHub Pages 子路径下认不到。
+- ❌ 不再考虑拆 `GameDetail.vue`、也不搬 `.workbuddy/scripts`：前者风险大于收益，后者零收益（2026-10-20 定）。
+
 ## 云同步
 **用户场景（本人确认）**：**单机记账**，一次只有一台电脑在用。痛点只有 **怕数据丢** + **换设备能拿到之前的数据**；**明确不需要多人实时同步**。
 → 结论：**Gist 冷备份是主路径**；Deno 实时同步 **已停用**（用户不愿为解冻绑卡，且长连接会烧穿免费额度）。
