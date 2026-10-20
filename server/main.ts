@@ -7,9 +7,13 @@
  *
  * 接口：
  *   GET  /api/ping                 健康检查
- *   GET  /api/state?room=xxx       读取快照
+ *   GET  /api/state?room=xxx       读取快照（带 ?since=N 时无变化只回一行 unchanged）
  *   POST /api/state?room=xxx       写入快照（默认拒绝比云端更旧的数据，?force=1 强制）
- *   GET  /api/watch?room=xxx       SSE，快照变化时推送
+ *   GET  /api/watch?room=xxx       SSE 推送（⚠️ 已弃用，前端改用轮询，见下）
+ *
+ * 为什么弃用 SSE：长连接会让实例一直「被加载」，Deno 按 768MB × 每秒计内存时间，
+ * 免费额度（150 GiB·hr）一台设备挂一夜就烧掉一大截，实测直接触发 USAGE_EXCEEDED 停服。
+ * 改成短轮询后实例能缩容到 0，代价是最多 10 秒延迟。
  */
 
 const SIZE_LIMIT = 2 * 1024 * 1024;
@@ -42,10 +46,34 @@ function badRoom(room: string): Response | null {
 
 const kv = await Deno.openKv();
 
-/** 读快照。房间为空时返回 { ok:true, snapshot:null }，前端据此判断「云端还没有数据」 */
-async function handleGet(room: string): Promise<Response> {
+/** 只存「版本号 + 体积」的小记录，轮询时先读它，避免每次都把整份快照拉下来 */
+type Meta = { updatedAt: number; size: number };
+
+/**
+ * 读快照。房间为空时返回 { ok:true, snapshot:null }，前端据此判断「云端还没有数据」。
+ *
+ * 带 ?since=<updatedAt> 时走快路径：先读 meta（很小），云端没有更新就只回一行
+ * { ok:true, unchanged:true }，不把整份快照传下去。
+ * 前端每 10 秒问一次，绝大多数请求都落在这一行上 —— 省流量，也省 KV 读单元。
+ */
+async function handleGet(room: string, since: number): Promise<Response> {
+  const meta = await kv.get<Meta>(["meta", room]);
+  const metaUpdatedAt = Number(meta.value?.updatedAt) || 0;
+
+  if (since > 0 && metaUpdatedAt > 0 && metaUpdatedAt <= since) {
+    return json({ ok: true, unchanged: true, updatedAt: metaUpdatedAt });
+  }
+
   const entry = await kv.get(["state", room]);
-  return json({ ok: true, snapshot: entry.value ?? null });
+  const snapshot = (entry.value ?? null) as { updatedAt?: number } | null;
+  const updatedAt = Number(snapshot?.updatedAt) || 0;
+
+  // 老数据（加 meta 之前写的）这里补一条，下次轮询就能走快路径
+  if (!meta.value && snapshot) {
+    await kv.set(["meta", room], { updatedAt, size: 0 });
+  }
+
+  return json({ ok: true, snapshot, updatedAt });
 }
 
 /**
@@ -96,6 +124,8 @@ async function handlePost(
   }
 
   await kv.set(["state", room], body);
+  // 版本号单独存一份小的，供轮询做「有没有变化」的快速判断
+  await kv.set(["meta", room], { updatedAt: incoming, size: text.length });
   return json({ ok: true, updatedAt: incoming, size: text.length });
 }
 
@@ -211,7 +241,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return handleWatch(room, req);
   }
 
-  if (req.method === "GET") return await handleGet(room);
+  if (req.method === "GET") {
+    return await handleGet(room, Number(url.searchParams.get("since")) || 0);
+  }
   if (req.method === "POST") {
     return await handlePost(room, req, url.searchParams.get("force") === "1");
   }
