@@ -1,12 +1,11 @@
 /**
- * 记录榜 —— 十四项「历史之最」，分三组：
+ * 记录榜 —— 十五项「历史之最」，分三组：
  * 高光时刻（赢）· 至暗时刻（输）· 韧性时刻（过程）。
  *
  * 注 1：曾经还有一组「铁人出勤」（出勤王 / 连续出勤天数 / 元老），用户已要求去掉，
  * 别再把它加回来。
  * 注 2：「当日最高积分」也已按用户要求删除（它跟「单局最高积分」高度重复，
- * 谁赢的局多谁就占着，信息量不大）。**别再加回「当日」类积分记录**；
- * 至暗时刻的「当日最惨」是用户明确保留的，不受影响。
+ * 谁赢的局多谁就占着，信息量不大）。**别再加回「当日」类积分记录**。
  * 注 3：「最长不输光」也已删除 —— 开局那几局人人都是「N 局没输光」，并列一大片，
  * 谁打得多谁占着，信息量还不如输光次数。韧性时刻**别再加"没发生过的坏事累计多久"
  * 这类口径**（连续不输光 / 连续不上桌 … 都是同一毛病）。
@@ -21,8 +20,8 @@
  * 4. **输光判定**：结算后剩余筹码 <= 0 **且** 这一局是亏的。
  *    只判 `chips <= 0` 会在底注为 0 的脏数据里把所有人误判成输光。
  * 5. 每条记录都带一份 `board`（前 BOARD_SIZE 名挑战者），不只是冠军一个人。
- * 6. **「最惨」类只收确实亏了的**（`cents < 0`）：单局最惨 / 当日最惨 / 最惨连败都一样。
- *    否则一个从没输过的人会以「+1.00」登上「单局最惨」榜，很荒谬。没输过的人不进榜。
+ * 6. **「输」类记录只收确实亏了的**（`cents < 0`）：当头一棒 / 高台跳水都一样。
+ *    否则一个从没输过的人会以「+1.00」登上最惨榜，很荒谬。没输过的人不进榜。
  * 7. **翻盘王必须是「输光的下一局」且真的赢回来**（`cents > 0`）。
  *    不限定「下一局」的话，它就退化成变相的单局最高积分了。
  * 8. **碾压王 = 单局领先第二名最多**：必须同桌至少两个主账号、本人真的赢到钱
@@ -37,10 +36,17 @@
  *    以前没人记。至少熬过 `BREAK_MIN_LOSE` 场连败才算，1 连败就止跌不算苦尽甘来；
  *    平局不打断连败计数（与 streak.js 同口径）。
  * 12. **奖券只发给「单局发生的事」**（`ticket: true`）：单局最高积分 / 碾压王 /
- *    单局最惨 / 翻盘王 / 连败终结者。累计型记录（赛季·当日·连胜·连败·输光次数·
- *    胜率·最猛一波·不死小强）**一律 `ticket: false`** —— 它们只要又打一局数值就
- *    会自然变大，每局都判"刷新"会让奖券通胀（实测第二局跟第一局打一样也发 40 券）。
+ *    当头一棒 / 翻盘王 / 连败终结者。累计型记录（赛季·连胜·连败·输光次数·垫底·
+ *    高台跳水·胜率·最猛一波·不死小强·长夜）**一律 `ticket: false`** ——
+ *    它们只要又打一局数值就会自然变大，每局都判"刷新"会让奖券通胀
+ *    （实测第二局跟第一局打一样也发 40 券）。
  *    新加记录项时先想清楚它是"这一局发生的事"还是"攒出来的"，攒出来的不要发券。
+ * 13. 至暗时刻原先的「单局最惨 / 当日最惨 / 最惨连败」三项已按用户要求删除：
+ *    单局最惨就是「单局最高积分」取反（同一批局里的镜像，没有新信息），
+ *    当日最惨是它按天再算一遍，最惨连败跟它俩高度相关 —— 三条说的是同一件事。
+ *    **别把"把赢的纪录取反"当补对称**，那只是换个颜色重贴一遍。
+ *    现在的四项至暗各有各的画面：垫底（全场最差）· 当头一棒（刚赢完就挨打）·
+ *    高台跳水（赢到过又吐回去）· 长夜漫漫（输光后熬了多久才翻身）。
  *
  * 依赖方向：records → season → streak → stats，单向无环。
  * 所以 stats.js / streak.js / season.js **都不能反过来 import 本文件**。
@@ -64,6 +70,15 @@ export const BOARD_SIZE = 5;
 
 /** 「连败终结者」至少得熬过这么长的连败（1 连败就止跌不算苦尽甘来） */
 export const BREAK_MIN_LOSE = 2;
+
+/** 「当头一棒」至少得先连胜这么久（刚赢 1 局就输，那是正常波动不是剧情） */
+export const SHOWER_MIN_WIN = 2;
+
+/** 「垫底王」同桌至少得有这么多个主账号（两人桌输家必然垫底，没有信息量） */
+export const LAST_MIN_SEATS = 3;
+
+/** 「长夜漫漫」至少得熬过这么多局才翻身（下一局就赢回来那是翻盘王，不惨） */
+export const NIGHT_MIN_ROUNDS = 2;
 
 function pad(value) {
   return value < 10 ? `0${value}` : String(value);
@@ -367,77 +382,90 @@ function collectMostBusted(rounds, groupOf) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 8. 单局最惨（补对称：有「最高」就该有「最惨」）                         */
+/* 9. 垫底王：全场盈亏垫底的次数                                          */
 /* ------------------------------------------------------------------ */
 
-function collectWorstRound(rounds, groupOf) {
-  const worst = new Map();
-  rounds.forEach((round, index) => {
-    groupTotalsOf(round, groupOf).forEach((cents, group) => {
-      // 只收确实亏了的局：从未输过的人不该登上「最惨」榜
-      if (cents >= 0) return;
-      const prev = worst.get(group);
-      if (!prev || cents < prev.cents) {
-        worst.set(group, { cents, round: index + 1, time: round.time });
-      }
-    });
-  });
+function collectLastPlace(rounds, groupOf) {
+  const last = new Map();
+  const played = new Map();
 
-  return toRows(
-    worst,
-    (payload) => ({
-      value: fromCents(payload.cents),
-      text: formatSigned(fromCents(payload.cents)),
-      detail: `第 ${payload.round} 局 · ${formatClock(payload.time)}`,
-    }),
-    // value 是负数，亏得最多的排最前
-    (a, b) => a.value - b.value
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* 9. 当日最惨                                                           */
-/* ------------------------------------------------------------------ */
-
-function collectWorstDay(rounds, groupOf) {
-  const days = new Map();
   rounds.forEach((round) => {
-    const key = dayKey(round.time);
-    if (!key) return;
-    groupTotalsOf(round, groupOf).forEach((cents, group) => {
-      const id = `${group}|${key}`;
-      const prev = days.get(id);
-      if (prev) {
-        prev.cents += cents;
-        prev.games += 1;
-      } else {
-        days.set(id, { cents, games: 1, day: key, group });
-      }
+    const totals = groupTotalsOf(round, groupOf);
+    totals.forEach((cents, group) => {
+      played.set(group, (played.get(group) || 0) + 1);
+    });
+    // 两人桌输家必然垫底，那是概率不是倒霉，不记
+    if (totals.size < LAST_MIN_SEATS) return;
+
+    const sorted = Array.from(totals.values()).sort((a, b) => a - b);
+    const low = sorted[0];
+    // 并列垫底分不出「最惨的那个」，不记；且得是真亏了才算垫底
+    if (low >= 0 || sorted[1] === low) return;
+
+    totals.forEach((cents, group) => {
+      if (cents !== low) return;
+      last.set(group, (last.get(group) || 0) + 1);
     });
   });
 
-  const worst = new Map();
-  days.forEach((payload) => {
-    if (payload.cents >= 0) return;
-    const prev = worst.get(payload.group);
-    if (!prev || payload.cents < prev.cents) {
-      worst.set(payload.group, payload);
-    }
+  const rows = [];
+  last.forEach((times, name) => {
+    const games = played.get(name) || 0;
+    rows.push({
+      name,
+      value: times,
+      text: `${times} 次`,
+      detail: `共 ${games} 局 · 垫底率 ${((times / (games || 1)) * 100).toFixed(
+      0
+    )}%`,
+    });
   });
 
-  return toRows(
-    worst,
-    (payload) => ({
-      value: fromCents(payload.cents),
-      text: formatSigned(fromCents(payload.cents)),
-      detail: `${dayLabel(payload.day)} · ${payload.games} 局`,
-    }),
-    (a, b) => a.value - b.value
-  );
+  return rows.sort((a, b) => b.value - a.value);
 }
 
 /* ------------------------------------------------------------------ */
-/* 10. 最长连败（局数最多的一段连败）                                      */
+/* 10. 当头一棒：连胜之后紧接着的下一局，输得最狠的一次                     */
+/* ------------------------------------------------------------------ */
+
+function collectColdShower(history, roster) {
+  const rows = [];
+
+  buildStreakSequences(history, roster).forEach(({ name, items }) => {
+    let win = 0;
+    let best = null;
+
+    (items || []).forEach((item) => {
+      if (item.result === "deuce") return; // 平局不打断连胜，与 streak.js 同口径
+      if (item.result === "win") {
+        win += 1;
+        return;
+      }
+      // 连胜刚被终结的这一局：熬得越久、摔得越狠，越有排面
+      if (
+        win >= SHOWER_MIN_WIN &&
+        item.cents < 0 &&
+        (!best || item.cents < best.cents)
+      ) {
+        best = { cents: item.cents, win, round: item.round };
+      }
+      win = 0;
+    });
+
+    if (!best) return;
+    rows.push({
+      name,
+      value: fromCents(best.cents),
+      text: formatSigned(fromCents(best.cents)),
+      detail: `${best.win}连胜后 · 第 ${best.round} 局`,
+    });
+  });
+
+  return rows.sort((a, b) => a.value - b.value); // 亏得最多排前
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. 最长连败（局数最多的一段连败）                                      */
 /* ------------------------------------------------------------------ */
 
 function collectLongestLose(history, roster) {
@@ -466,30 +494,102 @@ function collectLongestLose(history, roster) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 11. 最惨连败（亏得最多的那一段，与「最长连败」不是一回事）              */
+/* 11. 高台跳水：一天之内从「赢最多」到「收盘」吐回去最多的一次              */
 /* ------------------------------------------------------------------ */
 
-function collectWorstStreak(history, roster) {
-  const board = buildStreakBoard(history, roster);
-  const rows = [];
+function collectPeakDrop(rounds, groupOf) {
+  const days = new Map(); // `${group}|${dayKey}` → 当天在途累计
 
-  board.forEach((row) => {
-    const run = row.worstRun;
-    if (!run || !run.times || run.cents >= 0) return;
-    rows.push({
-      name: row.name,
-      // value 统一用「元」，与其它记录项保持一致（内部计算仍是整数分）
-      value: fromCents(run.cents),
-      text: formatSigned(fromCents(run.cents)),
-      detail: `${formatStreak(run)} · 第 ${run.startRound}-${run.endRound} 局`,
+  rounds.forEach((round) => {
+    const key = dayKey(round.time);
+    if (!key) return;
+    groupTotalsOf(round, groupOf).forEach((cents, group) => {
+      const id = `${group}|${key}`;
+      const item = days.get(id) || { group, day: key, running: 0, peak: 0, games: 0 };
+      item.running += cents;
+      item.games += 1;
+      // 盘中最高点：只看累计盈亏爬到过的峰值，不看单局
+      if (item.running > item.peak) item.peak = item.running;
+      days.set(id, item);
     });
   });
 
-  return rows.sort((a, b) => a.value - b.value);
+  const worst = new Map();
+  days.forEach((item) => {
+    // 得真赢到过钱，且收盘比盘中最高点低 —— 不然就不是「跳水」，是「没赢过」
+    if (item.peak <= 0 || item.running >= item.peak) return;
+    const drop = item.peak - item.running;
+    const prev = worst.get(item.group);
+    if (!prev || drop > prev.drop) {
+      worst.set(item.group, { drop, ...item });
+    }
+  });
+
+  return toRows(
+    worst,
+    (payload) => ({
+      value: fromCents(-payload.drop),
+      text: formatSigned(fromCents(-payload.drop)),
+      detail: `${dayLabel(payload.day)} · 盘中 ${formatSigned(
+        fromCents(payload.peak)
+      )} → 收盘 ${formatSigned(fromCents(payload.running))}`,
+    }),
+    (a, b) => a.value - b.value
+  );
 }
 
 /* ------------------------------------------------------------------ */
-/* 12. 翻盘王：输光之后紧接着的下一局，赢回最多的一次                      */
+/* 12. 长夜漫漫：输光之后，熬过最多局才翻身的这一次                          */
+/* ------------------------------------------------------------------ */
+
+function collectLongNight(rounds, groupOf) {
+  // rounds 已按时间排序，push 顺序即时间顺序
+  const timeline = new Map();
+  rounds.forEach((round, index) => {
+    groupStatsOf(round, groupOf).forEach((item, group) => {
+      const list = timeline.get(group) || [];
+      list.push({ round: index + 1, cents: item.cents, busted: item.busted });
+      timeline.set(group, list);
+    });
+  });
+
+  const rows = [];
+  timeline.forEach((list, name) => {
+    let best = null;
+
+    list.forEach((item, i) => {
+      if (!item.busted) return;
+      // 往后数到下一次真的赢钱的局；中间那些就是「熬」的局数
+      let nextWin = -1;
+      for (let j = i + 1; j < list.length; j += 1) {
+        if (list[j].cents > 0) {
+          nextWin = j;
+          break;
+        }
+      }
+      // 至今没翻身的不记：故事还没结束，不适合挂个名次在上面
+      if (nextWin < 0) return;
+
+      const gap = nextWin - i - 1;
+      if (gap >= NIGHT_MIN_ROUNDS && (!best || gap > best.gap)) {
+        best = { gap, from: item.round, to: list[nextWin].round };
+      }
+    });
+
+    if (!best) return;
+    rows.push({
+      name,
+      value: best.gap,
+      text: `${best.gap} 局`,
+      detail: `第 ${best.from} 局输光 · 第 ${best.to} 局翻身`,
+    });
+  });
+
+  return rows.sort((a, b) => b.value - a.value);
+}
+
+/* ------------------------------------------------------------------ */
+/* 13. 翻盘王：输光之后紧接着的下一局，赢回最多的一次                      */
 /* ------------------------------------------------------------------ */
 
 function collectBestComeback(rounds, groupOf) {
@@ -529,7 +629,7 @@ function collectBestComeback(rounds, groupOf) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 13. 不死小强：输光后爬起来的次数（翻盘王看单次，这一项看次数）          */
+/* 14. 不死小强：输光后爬起来的次数（翻盘王看单次，这一项看次数）          */
 /* ------------------------------------------------------------------ */
 
 function collectComebackTimes(rounds, groupOf) {
@@ -572,7 +672,7 @@ function collectComebackTimes(rounds, groupOf) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 14. 连败终结者：连败之后紧接着的下一局，赢回最多的一次                  */
+/* 15. 连败终结者：连败之后紧接着的下一局，赢回最多的一次                  */
 /* ------------------------------------------------------------------ */
 
 function collectStreakBreaker(history, roster) {
@@ -674,23 +774,11 @@ const RECORD_DEFS = [
     ticket: false,
   },
   {
-    key: "worstRound",
-    title: "单局最惨",
-    icon: "el-icon-bottom",
-    hint: "一局之内输得最狠",
+    key: "mostBusted",
+    title: "最多输光次数",
+    icon: "el-icon-warning-outline",
+    hint: "筹码清零且当局亏损",
     tone: "down",
-    // 数值越小（越负）越"狠"，dir 只给 buildNewRecords 判断有没有被刷新
-    dir: -1,
-    group: "dark",
-    ticket: true,
-  },
-  {
-    key: "worstDay",
-    title: "当日最惨",
-    icon: "el-icon-cloudy",
-    hint: "自然日累计，单日最惨",
-    tone: "down",
-    dir: -1,
     group: "dark",
     ticket: false,
   },
@@ -704,20 +792,41 @@ const RECORD_DEFS = [
     ticket: false,
   },
   {
-    key: "worstStreak",
-    title: "最惨连败",
-    icon: "el-icon-arrow-down",
-    hint: "亏得最多的那一段连败",
+    key: "lastPlace",
+    title: "垫底王",
+    icon: "el-icon-bottom",
+    hint: `全场盈亏垫底的次数（至少 ${LAST_MIN_SEATS} 人同桌）`,
+    tone: "down",
+    group: "dark",
+    // 累计型，不计券
+    ticket: false,
+  },
+  {
+    key: "coldShower",
+    title: "当头一棒",
+    icon: "el-icon-heavy-rain",
+    hint: `连胜 ${SHOWER_MIN_WIN} 场之后紧接着挨的最狠一记`,
+    tone: "down",
+    // 数值越小（越负）越狠，dir 只给 buildNewRecords 判断有没有被刷新
+    dir: -1,
+    group: "dark",
+    ticket: true,
+  },
+  {
+    key: "peakDrop",
+    title: "高台跳水",
+    icon: "el-icon-sort-down",
+    hint: "一天之内从赢最多到收盘，吐回去最多的一次",
     tone: "down",
     dir: -1,
     group: "dark",
     ticket: false,
   },
   {
-    key: "mostBusted",
-    title: "最多输光次数",
-    icon: "el-icon-warning-outline",
-    hint: "筹码清零且当局亏损",
+    key: "longNight",
+    title: "长夜漫漫",
+    icon: "el-icon-moon",
+    hint: `输光后熬过最多局才翻身（至少 ${NIGHT_MIN_ROUNDS} 局）`,
     tone: "down",
     group: "dark",
     ticket: false,
@@ -778,10 +887,11 @@ export function buildRecords(history, players) {
     bestRunMoney: () => collectBestRunMoney(history, roster),
     bestRate: () => collectBestRate(rounds, groupOf),
     mostBusted: () => collectMostBusted(rounds, groupOf),
-    worstRound: () => collectWorstRound(rounds, groupOf),
-    worstDay: () => collectWorstDay(rounds, groupOf),
     longestLose: () => collectLongestLose(history, roster),
-    worstStreak: () => collectWorstStreak(history, roster),
+    lastPlace: () => collectLastPlace(rounds, groupOf),
+    coldShower: () => collectColdShower(history, roster),
+    peakDrop: () => collectPeakDrop(rounds, groupOf),
+    longNight: () => collectLongNight(rounds, groupOf),
     bestComeback: () => collectBestComeback(rounds, groupOf),
     comebackTimes: () => collectComebackTimes(rounds, groupOf),
     streakBreaker: () => collectStreakBreaker(history, roster),
@@ -840,7 +950,7 @@ export function buildRecordWall(records) {
  * 同一个人今天再输一局，他的「当日最高」会从 +30 缩回 +20 —— 数值确实变了，
  * 但那是纪录被稀释，不是被刷新。所以必须按该项自己的排序方向 `dir` 比：
  *  - `dir = 1`（默认）：数值变大才算刷新（单局最高、连胜、输光次数 …）
- *  - `dir = -1`：数值变小（更惨）才算刷新（单局最惨 / 当日最惨 / 最惨连败）
+ *  - `dir = -1`：数值变小（更惨）才算刷新（当头一棒 / 高台跳水）
  * 其余两种：原来没人达标（首次登榜）算；并列后排序易主（值没动）不算。
  *
  * ⚠️ 只有 `ticket: true` 的项才进这张表（= 才发奖券）：**单局发生的事**才配叫
@@ -849,7 +959,7 @@ export function buildRecordWall(records) {
  * 一二十张券，奖券严重通胀（实测第二局打得跟第一局一模一样也发 40 券）。
  * 它们照常记在记录榜上，只是不再计券。
  *
- * 至暗时刻里 `worstRound`（单局最惨）仍计券，与「输光发安慰券」一个思路：
+ * 至暗时刻里 `coldShower`（当头一棒）仍计券，与「输光发安慰券」一个思路：
  * 输也要输得有排面。
  *
  * @param {Array} prevHistory 本局入账前的流水（调用方在 unshift 之前存好的那份）

@@ -232,25 +232,35 @@ check("可发券的只有 5 项单局型记录", () => {
   assert.deepEqual(ticketKeys(), [
     "bestRound",
     "biggestLead",
-    "worstRound",
+    "coldShower",
     "bestComeback",
     "streakBreaker",
   ]);
 });
 
-check("累计型记录（赛季/连胜/最猛一波/输光次数 …）一律不计券", () => {
+check("累计型记录（赛季/连胜/最猛一波/输光次数/垫底/高台跳水 …）一律不计券", () => {
   const off = buildRecords([g1], players)
     .filter((row) => row.ticket === false)
     .map((row) => row.key);
-  ["bestSeason", "longestStreak", "bestRunMoney", "bestRate", "mostBusted"].forEach(
-    (key) => assert.ok(off.indexOf(key) >= 0, `${key} 不该发券`)
-  );
+  [
+    "bestSeason",
+    "longestStreak",
+    "bestRunMoney",
+    "bestRate",
+    "mostBusted",
+    "longestLose",
+    "lastPlace",
+    "peakDrop",
+    "longNight",
+    "comebackTimes",
+  ].forEach((key) => assert.ok(off.indexOf(key) >= 0, `${key} 不该发券`));
 });
 
 check("第一局：只算单局型，不再一次性 10 项", () => {
   const map = buildNewRecords([], [g1], players);
   const keys = Object.values(map).flatMap((entry) => entry.items.map((i) => i.key));
-  assert.deepEqual(keys.sort(), ["bestRound", "biggestLead", "worstRound"].sort());
+  // 第一局没有「上一局」，所以翻盘王 / 连败终结者 / 当头一棒都出不来，只剩这两项
+  assert.deepEqual(keys.sort(), ["bestRound", "biggestLead"].sort());
 });
 
 check("第二局打得跟第一局一模一样：一项纪录都不给（不再白送券）", () => {
