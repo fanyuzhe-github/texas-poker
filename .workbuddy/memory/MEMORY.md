@@ -89,6 +89,9 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 - 恢复先弹确认；自动备份失败弹 **warning**（静默会让人以为安全）；`daily` 不进云；PAT 只勾 `gists`，**别让用户把 token 发给 AI**；classic PAT 可选 **No expiration**。
 - ⚠️ **必须 classic token**：细粒度（`github_pat_` 开头）**没有 gist 权限**，`isFineGrainedToken()` 保存时拦下提示换 `ghp_`。
 - ⚠️ 换 token 走「更换 token」（`cloudTokenEditing`）；保存时**清掉 `gistId`** 让它重新按文件名认领（换账号 = 换网盘）。别改回「存过 token 就藏起输入框」。
+- **三个销毁/退出动作别搞混**（`2af660a`）：`断开连接` = 只断本机（云端还在）；`清空云端存档` = `deleteGist()` 真删 gist（本机数据一律不动，token 保留，只清 `gistId`/`lastSyncAt`，`syncedUpdatedAt` **故意保留**否则下次上传会误判成新设备弹覆盖框）；`清空流水` = 本机流水归零（走 `rebuildPlayersFromHistory`）。
+- ⚠️ `gist.js` 的 `request()` 必须处理 **204**（DELETE 成功无响应体，硬 `json()` 会抛 SyntaxError → 删成功反而报错）。`deleteGist` 的 404 视为「本来就没有」返回 false，不当失败。
+- ⚠️ 确认框里的 `confirmButtonClass: "el-button--danger"` 会被主题 `.el-button--primary` 的 `background` 渐变盖掉（两个类叠一起 = 深色字压红底），theme.css 里单独压了红色，别删。
 - 不需要压缩库（history 按体积保留，碰不到 gist 1MB 截断线）。
 
 ## PWA / 添加到主屏幕（`34e1e5d`、`7c0f732`、`a698f4f`）
