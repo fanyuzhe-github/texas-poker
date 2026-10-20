@@ -13,8 +13,8 @@ export class Player {
     this.seatNum = seatNum; // 座位号
     this.name = name; // 姓名
     this.parent = parent; // 所属主账号名，null 表示自己就是主账号
-    // 顶层账号里，「主账号」可以下场，也可以在名下挂子账号做汇总；
-    // 没被标记成主账号的顶层账号是「独立号」，同样自己就能上桌
+    // 顶层账号里，名下**挂着子账号**的主账号只做积分汇总、不上桌；
+    // 名下还没有子账号的主账号与「独立号」一样，自己就能上桌（见 core/ranking.js 的 canSit）
     this.isMain = isMain === true;
     this.chips = chips; // 剩余筹码
     this.raceResult = raceResult; // 比赛结果： win,lose,deuce

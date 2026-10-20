@@ -125,8 +125,8 @@ export function childrenOf(players, mainName) {
 
 /**
  * 分组容器：名下挂着子账号的顶层账号。
- * ⚠️ 现在只用于展示判断（列表里标几个子账号），**不再用来限制上桌** ——
- *    主账号自己要下场打一局是允许的。
+ * ⚠️ 2026-10-20 起这类号**只做积分汇总、不能上桌**（canSit 会拦下它）。
+ *    名下没有子账号的主账号不算容器，等同独立号，可以自己下场。
  */
 export function isGroupOnly(player, players) {
   return !player.parent && childrenOf(players, player.name).length > 0;
@@ -136,15 +136,35 @@ export function isGroupOnly(player, players) {
  * 显式创建的主账号：名下可以有子账号，也可以暂时一个都没有。
  * 注意与「独立号」区分 —— 独立号同样是顶层账号（parent 为空），
  * 但它没有被标记成主账号。
+ *
+ * ⚠️ 这个标记**不再决定能不能上桌**：上桌口径只看有没有子账号（见 canSit）。
  */
 export function isMainAccount(player) {
   return !player.parent && player.isMain === true;
 }
 
 /**
- * 可上桌的账号名：**名册里的账号一律可上桌**，主账号也能自己下场。
+ * 这个号能不能上桌（上桌 = 出现在选人列表里、能开局）。
  *
- * 主账号亲自上桌时战绩记在自己头上，总榜汇总（自身 + 子账号）天然包含这部分，
+ * ⚠️ 规则（2026-10-20 用户定）：
+ *   - 名下**挂着子账号**的主账号 = 只做积分汇总的分组容器，**不能**亲自上桌；
+ *   - 名下**没有**子账号的主账号等同独立号，**可以**上桌（它还没开始汇总谁的账）。
+ *
+ * 判定只看「有没有别的号认它当 parent」，不看 isMain 标记 ——
+ * 老数据里 isMain 可能缺失，但 parent 指向不会说谎（storage 还会按有无子账号反推）。
+ * 名册外的新昵称一律放行：下拉框 allow-create 现敲的名字不是「谁的主账号」。
+ */
+export function canSit(players, name) {
+  const list = Array.isArray(players) ? players : [];
+  const target = String(name == null ? "" : name).trim();
+  if (!target) return false;
+  return !list.some((item) => item && item.parent === target);
+}
+
+/**
+ * 可上桌的账号名列表（选人下拉框的数据源）。
+ *
+ * 主账号自己下场时战绩记在自己头上，总榜汇总（自身 + 子账号）天然包含这部分，
  * 不存在重复计算 —— 见 buildMainRanking 的 members = [main, ...children]。
  *
  * 「同一个主账号一局只能出一个号」交给 limitOnePerMain：
@@ -152,7 +172,9 @@ export function isMainAccount(player) {
  */
 export function selectableNames(players) {
   const list = Array.isArray(players) ? players : [];
-  return list.map((player) => player.name);
+  return list
+    .filter((player) => canSit(list, player.name))
+    .map((player) => player.name);
 }
 
 /**
@@ -161,7 +183,7 @@ export function selectableNames(players) {
  * 战绩本来就是记在实际账号头上（见 applyOutcome），这里只排序，不存在翻倍。
  *
  * @param {Array} players 今日榜累计列表
- * @param {Array} [roster] 总库，用来剔除历史遗留的主账号脏数据
+ * @param {Array} [roster] 总库，用来剔除历史遗留的分组容器脏数据
  * @returns {Array} 按积分降序排列
  */
 export function buildTodayRanking(players, roster) {
@@ -170,10 +192,9 @@ export function buildTodayRanking(players, roster) {
 
   return list
     .filter((player) => {
-      const ref = base.find((item) => item.name === player.name) || player;
-      // 主账号默认不进今日榜（历史脏数据兜底）；
+      // 分组容器（名下挂着子账号）默认不进今日榜，历史脏数据兜底；
       // 但只要它今天真下了场 —— 看**今日榜这一行自己**的战绩，一律保留
-      return !isMainAccount(ref) || totalGames(player) > 0;
+      return canSit(base, player.name) || totalGames(player) > 0;
     })
     .sort((a, b) => b.score - a.score);
 }

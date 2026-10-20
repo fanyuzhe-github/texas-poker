@@ -124,15 +124,16 @@ console.log("\n[5] 主账号自身历史积分也要计入");
   check("5 + 10 = 15", ranking[0].score, 15);
 }
 
-console.log("\n[6] selectableNames 也包含主账号（主账号可上桌）");
+console.log("\n[6] 挂着子账号的主账号不可上桌（只做汇总）");
 {
   const players = [
     mk("张三", null, 0),
     mk("三哥", "张三", 0),
     mk("李四", null, 0), // 独立玩家，无子账号
   ];
-  // 保持原列表顺序：三哥(index1) 在 李四(index2) 之前
-  check("可上桌名单", selectableNames(players), ["张三", "三哥", "李四"]);
+  // 保持原列表顺序：三哥(index1) 在 李四(index2) 之前；
+  // 张三名下挂着三哥，只做汇总，不进选人列表
+  check("可上桌名单", selectableNames(players), ["三哥", "李四"]);
   check("张三是分组容器", isGroupOnly(players[0], players), true);
   check("李四不是分组容器", isGroupOnly(players[2], players), false);
   check("childrenOf 取值", childrenOf(players, "张三").length, 1);

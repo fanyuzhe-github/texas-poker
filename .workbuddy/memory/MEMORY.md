@@ -18,10 +18,11 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 - 浏览器实测：Chrome `--headless=new --no-sandbox --proxy-server='direct://' --remote-debugging-port=9222` + `Emulation.setDeviceMetricsOverride` + `Runtime.evaluate` 改 Vue 实例；进程要 `run_in_background`（本机代理会把 127.0.0.1 劫持成 502）。
 
 ## 玩家体系
-子账号（`parent`）· 主账号（`isMain`）· 独立号，**都能上桌**。今日榜 `buildTodayRanking`（不归集）；总榜 `buildMainRanking`（主账号汇总）。
-- `selectableNames` 返回全名册、不过滤主账号；「同主账号一局只出一个号」靠 `limitOnePerMain`（后选顶掉先选）。
-- ⚠️ 主账号亲自上桌**不翻倍**：战绩只记自己头上，`members=[main,...children]` 天然各算一次。
-- ⚠️ `buildTodayRanking` 判断主账号上没上桌看**今日榜该行自己的 `raceResult`**，不能看总库 `ref`（可能还是 0 场，会把真上桌的误剔）。
+子账号（`parent`）· 主账号（`isMain`）· 独立号。今日榜 `buildTodayRanking`（不归集）；总榜 `buildMainRanking`（主账号汇总）。
+- ⚠️ **能不能上桌只看「名下有没有子账号」**（2026-10-20 用户定，`ranking.js` 的 `canSit`）：挂着子账号的主账号 = 汇总容器，**不上桌**、也不进选人列表；名下没子账号的主账号等同独立号，**可以**上桌。`isMain` 标记**不再决定**上桌资格（只看 `parent` 指向，老数据缺 isMain 也不影响）。
+- `selectableNames` 已按上面的规则剔除容器；「同主账号一局只出一个号」靠 `limitOnePerMain`（后选顶掉先选）。下拉框 `allow-create` 手敲容器名会被 `selectPlayers` 的 watch 踢掉并提示 —— 光靠选项列表拦不住。
+- ⚠️ 主账号在「还没挂子账号」那段时间自己打的战绩**仍然有效**：战绩只记自己头上，`members=[main,...children]` 天然各算一次（不翻倍）。挂上子账号后它不再下场，旧战绩保留。
+- ⚠️ `buildTodayRanking` 判断容器上没上桌看**今日榜该行自己的 `raceResult`**，不能看总库 `ref`（可能还是 0 场，会把真上桌的误剔）。过滤条件已从 `isMainAccount` 换成 `canSit`。
 - ⚠️ 积分只记在实际下场的号头上，汇总一律实时算（两处都算会翻倍）。改名/解绑/换头像要同时写 `allPlayers` 与今日榜 `players`。
 - ⚠️ **删局/清空流水必须走 `rebuildPlayersFromHistory`**（按 time 升序重放，只重建 5 个战绩字段）。`applyOutcome` 只能累加退不回——只改 history 不重建，总榜/段位/记录/勋章会按幽灵牌局算账。今日榜重建要加当天 `filter`。
 - 选人列表不预置默认昵称；空名册靠 `slot="empty"` 提示「敲名字回车自动入库」（`allow-create`）。

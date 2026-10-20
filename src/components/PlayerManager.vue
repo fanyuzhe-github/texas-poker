@@ -8,7 +8,7 @@
     <div class="add-bar">
       <div class="add-bar__row">
         <span class="add-bar__count">
-          {{ mainCount }} 个主账号 · {{ singleCount }} 个独立号 ·
+          {{ mainCount }} 个主账号（只汇总） · {{ singleCount }} 个独立号 ·
           {{ subAccountCount }} 个子账号
         </span>
         <el-button
@@ -16,11 +16,12 @@
           size="small"
           icon="el-icon-plus"
           @click="handleAddMain"
-          >添加主账号</el-button
+          >添加账号</el-button
         >
       </div>
       <span class="add-bar__hint">
-        主账号可以直接上桌，也能在名下挂子账号做积分汇总；独立号自己就能上桌，给它加子账号后自动升级为主账号。
+        主账号 = 名下已经挂了子账号、只负责汇总积分的号，它不再上桌，也不出现在选人列表里；
+        名下还没有子账号的主账号等同独立号，可以自己上桌。
         同一个主账号（它自己 + 名下所有子账号）在任何一局里只能出一个号
       </span>
     </div>
@@ -35,14 +36,12 @@
           <div class="pm-card__id">
             <b class="pm-card__name">{{ item.name }}</b>
             <span class="pm-card__tags">
+              <!-- 名下没挂子账号的号一律算独立号（包括刚建好、还没挂子账号的主账号） -->
               <el-tag
                 v-if="item.children && item.children.length"
                 size="mini"
                 type="info"
                 >{{ item.children.length }} 个子账号</el-tag
-              >
-              <el-tag v-else-if="item.isMain === true" size="mini" type="warning"
-                >主账号</el-tag
               >
               <el-tag v-else size="mini" type="success">独立号</el-tag>
             </span>
@@ -185,7 +184,8 @@
       </el-table-column>
 
       <el-table-column type="index" width="50" />
-      <el-table-column label="主账号" min-width="200">
+      <!-- 这一列既有汇总容器（挂着子账号的主账号）也有独立号，别只写「主账号」 -->
+      <el-table-column label="账号" min-width="200">
         <template slot-scope="scope">
           <div class="cell-name">
             <player-avatar
@@ -194,19 +194,13 @@
               :size="26"
             />
             <span class="cell-name__text">{{ scope.row.name }}</span>
+            <!-- 名下没挂子账号的号一律算独立号（包括刚建好、还没挂子账号的主账号） -->
             <el-tag
               v-if="scope.row.children.length"
               size="mini"
               type="info"
               class="main-tag"
               >{{ scope.row.children.length }} 个子账号</el-tag
-            >
-            <el-tag
-              v-else-if="scope.row.isMain === true"
-              size="mini"
-              type="warning"
-              class="main-tag"
-              >主账号</el-tag
             >
             <el-tag v-else size="mini" type="success" class="main-tag"
               >独立号</el-tag
@@ -303,13 +297,18 @@ export default {
         0
       );
     },
-    /** 显式创建的主账号：只汇总、不上桌 */
+    /**
+     * 主账号 = 名下已经挂着子账号的号：**只汇总、不上桌**。
+     * 判定只看有没有子账号，不看 isMain 标记 —— 与 selectableNames / canSit 同一口径。
+     */
     mainCount() {
-      return this.players.filter((main) => main.isMain === true).length;
+      return this.players.filter((main) => (main.children || []).length > 0)
+        .length;
     },
-    /** 未被标记成主账号的顶层账号：自己就能上桌 */
+    /** 名下还没有子账号的顶层账号（独立号 + 空壳主账号）：都能上桌 */
     singleCount() {
-      return this.players.filter((main) => main.isMain !== true).length;
+      return this.players.filter((main) => !(main.children || []).length)
+        .length;
     },
     /** 所有账号名（主 + 子），用于重名校验 */
     existingNames() {
@@ -338,8 +337,9 @@ export default {
     },
     handleAddMain() {
       this.$prompt(
-        "主账号只用于汇总积分，不会出现在选人列表里；请在它名下添加子账号上桌",
-        "添加主账号",
+        "新账号先按独立号处理，可以自己上桌；在它名下添加子账号后，它就升级为主账号，" +
+          "转为只汇总积分、不再下场",
+        "添加账号",
         {
           confirmButtonText: "确定",
           cancelButtonText: "取消",
@@ -358,11 +358,12 @@ export default {
         .catch(() => {});
     },
     handleAddSub(main) {
-      const isSingle = main.isMain !== true;
+      // 名下已经有子账号：它早就是汇总容器了，不必再讲一遍「会退出选人列表」
+      const hasChildren = (main.children || []).length > 0;
       this.$prompt(
-        isSingle
-          ? `新子账号的战绩会自动汇总到「${main.name}」名下；加完后「${main.name}」升级为主账号，不再出现在选人列表`
-          : `新子账号的战绩会自动汇总到「${main.name}」名下`,
+        hasChildren
+          ? `新子账号的战绩会自动汇总到「${main.name}」名下（它已经是只汇总、不上桌的主账号）`
+          : `新子账号的战绩会自动汇总到「${main.name}」名下；加完后「${main.name}」就转为只汇总、不再亲自上桌`,
         "添加子账号",
         {
           confirmButtonText: "确定",

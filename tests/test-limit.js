@@ -60,11 +60,19 @@ eq(
   "主账号与自己的子账号也算同一组"
 );
 
-console.log("\n[4] 主账号自己也能上桌");
+console.log("\n[4] 挂着子账号的主账号不上桌（只做汇总）");
 eq(
   selectableNames(players),
-  ["张三", "三哥", "小张", "老陈"],
-  "名册里所有账号都可上桌"
+  ["三哥", "小张", "老陈"],
+  "剔掉张三（名下有三哥、小张），其余都能上桌"
+);
+eq(
+  selectableNames([
+    { name: "老王", parent: null, score: 0 },
+    { name: "老陈", parent: null, score: 0 },
+  ]),
+  ["老王", "老陈"],
+  "名下没有子账号的顶层账号都能上桌"
 );
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败\n`);

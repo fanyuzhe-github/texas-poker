@@ -77,8 +77,9 @@ export function normalizePlayer(raw, index = 0) {
       : index,
     name: String(source.name == null ? "" : source.name).trim(),
     parent: parentName || null,
-    // 顶层账号分两种：isMain=true 是主账号（可上桌，也可挂子账号做汇总）；
-    // false（老数据没有这个字段）按「独立号」处理，同样可以上桌
+    // 顶层账号分两种：isMain=true 是主账号；false（老数据没有这个字段）按「独立号」处理。
+    // ⚠️ 能不能上桌**不看这个标记**，只看名下有没有子账号（见 ranking.js 的 canSit）：
+    // 挂着子账号的主账号只做汇总、不上桌；名下没子账号的主账号等同独立号，可以上桌。
     isMain: !parentName && source.isMain === true,
     chips: yuan(source.chips),
     raceResult: {

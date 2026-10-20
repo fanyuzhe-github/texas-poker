@@ -766,6 +766,7 @@ import {
   buildMainRanking,
   buildTodayRanking,
   selectableNames,
+  canSit,
   mainOf,
   limitOnePerMain,
   rebuildPlayersFromHistory,
@@ -993,13 +994,27 @@ export default {
   },
   watch: {
     /**
-     * 两个职责：
-     * 1. 同一个主账号下只能留一个号在座，后选的顶掉先选的；
-     * 2. 下拉框支持 allow-create，用户随手写的新昵称要立刻进玩家库，
+     * 三个职责：
+     * 1. 名下挂着子账号的主账号不能上桌（只做汇总），选上了也要踢掉 ——
+     *    下拉框 allow-create 允许手敲名字，光靠选项列表拦不住；
+     * 2. 同一个主账号下只能留一个号在座，后选的顶掉先选的；
+     * 3. 下拉框支持 allow-create，用户随手写的新昵称要立刻进玩家库，
      *    否则只有点「开局选座」那一刻才会写入，中途刷新就丢了。
      */
     selectPlayers(value) {
       const names = Array.isArray(value) ? value.filter(Boolean) : [];
+
+      // 名册外的新昵称（下拉框 allow-create 现敲的）不参与判断，一律放行
+      const known = (name) =>
+        this.allPlayers.some((player) => player.name === name);
+      const blocked = names.filter((name) => known(name) && !canSit(this.allPlayers, name));
+      if (blocked.length) {
+        this.selectPlayers = names.filter((name) => !blocked.includes(name));
+        this.$message.warning(
+          `「${blocked.join("、")}」名下挂着子账号，只负责汇总积分、不亲自上桌`
+        );
+        return; // 改完后会再次触发本 watch，接着走下面的流程
+      }
 
       const limited = limitOnePerMain(this.allPlayers, names);
       if (limited.length !== names.length) {
@@ -1053,7 +1068,8 @@ export default {
     formatSigned,
 
     /**
-     * 选人列表放名册里所有账号 —— 主账号也能自己下场。
+     * 选人列表 = 名册里能上桌的号：独立号 + 名下还没子账号的主账号。
+     * 挂着子账号的主账号由 selectableNames 直接滤掉（只做汇总、不上桌）。
      * 「同组只出一个号」由 limitOnePerMain 兜底。
      *
      * ⚠️ 列表里只有名册里真实存在的玩家 —— 不预置任何默认昵称。
@@ -1193,7 +1209,9 @@ export default {
 
     /**
      * 新建一个主账号。
-     * 主账号可以自己上桌，也可以在名下挂子账号做积分汇总 —— 两种用法不冲突。
+     *
+     * 刚建好的主账号名下还没有子账号，等同独立号 —— **可以自己上桌**。
+     * 一旦给它挂上子账号，它就升级成只做汇总的分组容器，自动退出选人列表。
      * ⚠️ 同一局里主账号和它的子账号只能出一个号（limitOnePerMain）。
      */
     handleAddMain(name) {
@@ -1215,11 +1233,15 @@ export default {
       }
       this.refreshPlayerOptions();
       this.$message.success(
-        `主账号「${value}」已创建，可以直接上桌，也能在名下挂子账号做汇总`
+        `主账号「${value}」已创建，现在可以自己上桌；` +
+          `挂上子账号后就转为只汇总、不再下场`
       );
     },
 
-    /** 给主账号挂一个子账号，其战绩会自动汇总到主账号名下 */
+    /**
+     * 给账号挂一个子账号，其战绩会自动汇总到上级名下。
+     * ⚠️ 挂完子账号后，上级就变成「只汇总、不上桌」的容器，从选人列表里退出。
+     */
     handleAddSub({ mainName, subName }) {
       const name = String(subName || "").trim();
       if (!name) return;
@@ -1228,6 +1250,9 @@ export default {
         return;
       }
 
+      // 挂上子账号后这个号就变成汇总容器、不能再上桌了 ——
+      // 它要是本来就在选人列表里，被 refreshPlayerOptions 悄悄摘掉会很突然，得说一声
+      const wasSelected = this.selectPlayers.includes(mainName);
       const seatNum = this.allPlayers.length + 1;
       this.allPlayers = this.allPlayers.map((player) =>
         player.name === mainName ? { ...player, isMain: true } : player
@@ -1242,7 +1267,12 @@ export default {
         return;
       }
       this.refreshPlayerOptions();
-      this.$message.success(`已把「${name}」挂到「${mainName}」名下`);
+      const dropped = wasSelected && !this.selectPlayers.includes(mainName);
+      this.$message.success(
+        dropped
+          ? `已把「${name}」挂到「${mainName}」名下，「${mainName}」转为只汇总、已退出选人列表`
+          : `已把「${name}」挂到「${mainName}」名下`
+      );
     },
 
     /** 解除归属：子账号变回独立号，战绩不再汇总给上级，自己也能上桌 */
