@@ -4,7 +4,7 @@
  * 它是「换台电脑能拿到数据」的关键：新设备只记得 token，不记得 gistId，
  * 全靠这个函数按文件名把云端存档认领回来。
  */
-import { findGistId, isFineGrainedToken } from "../src/utils/gist.js";
+import { findGistId, deleteGist, isFineGrainedToken } from "../src/utils/gist.js";
 
 let pass = 0;
 let fail = 0;
@@ -125,19 +125,90 @@ check("网络错误要抛出来（不能当作没有存档）", msg.includes("�
 globalThis.fetch = realFetch;
 
 /* ---------------------------------------------------------- */
+/* deleteGist：清空云端存档（唯一会销毁云端数据的调用）          */
+/* ---------------------------------------------------------- */
+
+// 11. 走到 DELETE /gists/{id}，并且带上 token
+stubFetch(async () => ({ ok: true, status: 204, json: async () => null, text: async () => "" }));
+check("删掉云端存档返回 true", (await deleteGist("t", "abc123")) === true);
+check("用的是 DELETE 方法", !!(lastInit && lastInit.method === "DELETE"), lastInit && lastInit.method);
+check(
+  "请求打到 Gists 下的那个 id",
+  lastUrl === "https://api.github.com/gists/abc123",
+  lastUrl
+);
+check(
+  "删除也带 Authorization",
+  !!(lastInit && lastInit.headers && lastInit.headers.Authorization === "Bearer t")
+);
+
+// 12. DELETE 成功回 204 没有响应体 —— 之前 request 里硬 json() 会抛 SyntaxError
+stubFetch(async () => ({
+  ok: true,
+  status: 204,
+  json: async () => {
+    throw new SyntaxError("Unexpected end of JSON input");
+  },
+  text: async () => "",
+}));
+let noBody = "";
+try {
+  noBody = (await deleteGist("t", "abc123")) === true ? "ok" : "false";
+} catch (error) {
+  noBody = (error && error.message) || "throw";
+}
+check("204 无响应体不炸（不能误判成错误）", noBody === "ok", noBody);
+
+// 13. 404 = 云端本来就没有（别的设备删过 / 手工删过），对用户来说结果一样
+stubFetch(async () => jsonRes({ message: "Not Found" }, 404));
+let gone = null;
+try {
+  gone = await deleteGist("t", "abc123");
+} catch (error) {
+  gone = "throw";
+}
+check("404 返回 false 而不是报错", gone === false, String(gone));
+
+// 14. 401 要明确说 token 有问题，别让用户以为是删不掉
+stubFetch(async () => jsonRes({ message: "Bad credentials" }, 401));
+let delMsg = "";
+try {
+  await deleteGist("t", "abc123");
+} catch (error) {
+  delMsg = (error && error.message) || "";
+}
+check("401 转成 token 提示", delMsg.includes("token"), delMsg);
+
+// 15. 没给 id 就别发请求（否则会 DELETE /gists/ 整个列表接口）
+let called = false;
+stubFetch(async () => {
+  called = true;
+  return jsonRes({});
+});
+let emptyMsg = "";
+try {
+  await deleteGist("t", "");
+} catch (error) {
+  emptyMsg = (error && error.message) || "";
+}
+check("空 id 直接拦下不发请求", emptyMsg.includes("没有找到") && called === false, emptyMsg);
+
+globalThis.fetch = realFetch;
+
+/* ---------------------------------------------------------- */
 /* isFineGrainedToken：细粒度 token 没有 Gist 权限，要提前拦下  */
 /* ---------------------------------------------------------- */
 
-// 11. 细粒度 token 认得出来
+// 16. 细粒度 token 认得出来
 check("github_pat_ 认作细粒度", isFineGrainedToken("github_pat_11ABCDEFG0xxxxxxxxxxxxx") === true);
 
-// 12. classic token 不能误判
+// 17. classic token 不能误判
 check("ghp_ 不算细粒度", isFineGrainedToken("ghp_abcdefghijklmnopqrstuvwxyz0123456789") === false);
 
-// 13. 老式 40 位十六进制 token 也不能误判
+// 18. 老式 40 位十六进制 token 也不能误判
 check("老式 token 不算细粒度", isFineGrainedToken("0123456789abcdef0123456789abcdef01234567") === false);
 
-// 14. 空值 / 前后空格都不炸
+// 19. 空值 / 前后空格都不炸
 check("空值返回 false", isFineGrainedToken("") === false && isFineGrainedToken(null) === false);
 check("前后空格照样认", isFineGrainedToken("  github_pat_xxx  ") === true);
 

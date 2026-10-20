@@ -641,7 +641,15 @@
                 <el-link class="cloud-unlink" :underline="false" @click="handleDisconnectCloud"
                   >断开连接</el-link
                 >
-                <span class="cloud-foot__hint">不会删除云端存档</span>
+                <span class="cloud-foot__dot">·</span>
+                <el-link
+                  class="cloud-unlink is-danger"
+                  :underline="false"
+                  :disabled="cloudBusy"
+                  @click="handleClearCloud"
+                  >清空云端存档</el-link
+                >
+                <span class="cloud-foot__hint">本机数据不动</span>
               </div>
             </template>
 
@@ -785,6 +793,7 @@ import {
   createGist,
   updateGist,
   fetchGist,
+  deleteGist,
   findGistId,
   isFineGrainedToken,
 } from "../utils/gist";
@@ -2219,6 +2228,64 @@ export default {
         .catch(() => {});
     },
 
+    /**
+     * 清空云端存档：删掉 GitHub 上那份 gist。
+     *
+     * 与「断开连接」的区别：断开只是本机不再备份，云端那份还躺着；
+     * 这里是真把云端数据销毁掉（本项目唯一一处销毁云端数据的地方）。
+     * 本机 localStorage 一概不碰 —— 名册、流水、卡包都还在，
+     * 之后本机一有改动，3 秒防抖备份就会按本机数据重建一份。
+     */
+    async handleClearCloud() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.token) return;
+
+      try {
+        await this.$confirm(
+          "会删除 GitHub 上那份备份存档，删掉后无法从云端找回。本机的名册、流水、" +
+            "卡包都不会动；之后本机只要再有改动（或点「立即备份」），会自动按本机数据重建一份。",
+          "清空云端存档",
+          {
+            confirmButtonText: "删除云端存档",
+            cancelButtonText: "取消",
+            type: "warning",
+            confirmButtonClass: "el-button--danger",
+          }
+        );
+      } catch (error) {
+        return; // 用户取消
+      }
+
+      this.cloudBusy = true;
+      try {
+        // 本机不记得 gistId 时（换过设备）先按文件名认领，否则会白跑一趟
+        const gistId = cloud.gistId || (await this.resolveGistId(cloud.token));
+        if (!gistId) {
+          this.$message.info("云端没有找到存档，不需要清理");
+          return;
+        }
+
+        const deleted = await deleteGist(cloud.token, gistId);
+        // gistId 清空 → 卡片回到「等待首次备份」，下次上传重新认领或新建。
+        // syncedUpdatedAt 保留不动：这台设备确实跟云端对过账，清掉反而会让
+        // 下次上传误判成「新设备」而弹确认框。
+        this.cloud = { ...cloud, gistId: "", lastSyncAt: 0 };
+        if (!saveCloud(this.cloud)) {
+          this.$message.error("本机云备份状态保存失败，刷新后可能还显示旧状态");
+          return;
+        }
+        this.$message.success(
+          deleted ? "云端存档已删除，本机数据未改动" : "云端存档本来就不存在，已重新配对"
+        );
+      } catch (error) {
+        this.$message.error(
+          error && error.message ? error.message : "清空云端存档失败"
+        );
+      } finally {
+        this.cloudBusy = false;
+      }
+    },
+
     formatCloudTime(time) {
       const date = new Date(time);
       const pad = (value) => String(value).padStart(2, "0");
@@ -3419,10 +3486,11 @@ export default {
 .cloud-foot {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 3px 8px;
   margin-top: 8px;
 }
-/* 断开是不可逆的次要动作：平时灰着不抢眼，悬停才转红 */
+/* 断开 / 清空都是次要动作：平时灰着不抢眼，悬停才转红 */
 .cloud-foot .cloud-unlink {
   font-size: 12px;
   flex: none;
@@ -3431,6 +3499,20 @@ export default {
 }
 .cloud-foot .cloud-unlink:hover {
   color: #f56c6c;
+}
+.cloud-foot .cloud-unlink.is-disabled,
+.cloud-foot .cloud-unlink.is-disabled:hover {
+  color: #ccd2de;
+  cursor: not-allowed;
+}
+.cloud-foot__dot {
+  font-size: 12px;
+  color: #ccd2de;
+}
+.cloud-foot__hint {
+  font-size: 11px;
+  color: #a6adbe;
+  margin-left: auto;
 }
 .cloud-foot__hint {
   font-size: 12px;

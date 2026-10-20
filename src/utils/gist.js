@@ -48,6 +48,8 @@ async function request(url, { method = "GET", token, body } = {}) {
       error.status = res.status;
       throw error;
     }
+    // DELETE 成功回的是 204、没有响应体，硬 json() 会抛 SyntaxError
+    if (res.status === 204) return null;
     return await res.json();
   } catch (error) {
     if (error && error.name === "AbortError") {
@@ -112,6 +114,32 @@ export async function fetchGist(token, gistId) {
     }
   }
   return typeof file.content === "string" ? file.content : "";
+}
+
+/**
+ * 删掉整份云端存档。
+ *
+ * ⚠️ 这是本项目唯一一个真正销毁云端数据的调用，调用方必须先确认过。
+ * 只删 gist 本身，本机 localStorage 一概不碰 —— 删完本机数据还在，
+ * 下次「立即备份」会以本机为准重建一份。
+ *
+ * @returns {Promise<boolean>} true = 这次真删掉了；false = 云端本来就没有
+ */
+export async function deleteGist(token, gistId) {
+  const id = String(gistId || "").trim();
+  if (!id) throw new Error("没有找到要删除的云端存档");
+  try {
+    await request(`${API_BASE}/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      token,
+    });
+    return true;
+  } catch (error) {
+    // 404 = 云端早没了（别的设备删过、或在 GitHub 上手工删过）。
+    // 对用户来说结果一样，别当失败报。
+    if (error && error.status === 404) return false;
+    throw error;
+  }
 }
 
 /**

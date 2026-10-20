@@ -167,6 +167,22 @@ body {
   border-color: #a8b9ef;
   color: var(--pk-primary-dark);
 }
+/* 确认框里的「删除」按钮：element 的 danger 用 background-color，
+   会被上面 .el-button--primary 的 background 渐变盖掉；两个类叠在一起还会
+   出现深色字压红底、几乎看不清。这里给足优先级把红色压稳。 */
+.el-message-box__btns .el-button--danger,
+.el-message-box__btns .el-button--danger:focus {
+  background: #f56c6c;
+  border-color: #f56c6c;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(245, 108, 108, 0.28);
+}
+.el-message-box__btns .el-button--danger:hover {
+  background: #f78989;
+  border-color: #f78989;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(245, 108, 108, 0.32);
+}
 /* 只改 plain 变体：实心 info 在某些抽屉里当「灰按钮」用，动它会失去强调 */
 .el-button--info.is-plain {
   background: #fff;
