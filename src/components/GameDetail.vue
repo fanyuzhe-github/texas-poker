@@ -719,7 +719,7 @@ import {
   onLocalChange,
   muteLocalChange,
 } from "../core/storage";
-import { buildSnapshot, parseSnapshot, decideSync, isSnapshotTooBig } from "../core/sync";
+import { buildSnapshot, parseSnapshot, isSnapshotTooBig } from "../core/sync";
 import {
   createGist,
   updateGist,
@@ -727,15 +727,6 @@ import {
   findGistId,
   isFineGrainedToken,
 } from "../utils/gist";
-import {
-  normalizeEndpoint,
-  isValidRoom,
-  randomRoom,
-  pingEndpoint,
-  fetchState,
-  pushState,
-  pollState,
-} from "../utils/live";
 import { buildAchievements } from "../core/achievements";
 import { buildNewRecords } from "../core/records";
 import { tierLabel, tierTone, tierTip } from "../core/tier";
@@ -816,14 +807,6 @@ export default {
       cloud: null, // 云备份配置（token / gistId / 上次同步），只在本机
       cloudBusy: false, // 正在上传或下载，防重复点击
       cloudBackupTimer: null, // 本地改动后的防抖备份定时器，非响应式
-      liveForm: { endpoint: "", room: "" }, // 实时同步表单
-      liveBusy: false,
-      livePolling: false, // 轮询开关，非响应式
-      livePollTimer: null, // 下一轮轮询的定时器，非响应式
-      livePushTimer: null, // 本地改动后的防抖上传定时器，非响应式
-      liveFailCount: 0, // 连续失败次数，用于退避与提示
-      liveLinkStatus: "connecting", // 同步状态：live 正常 / down 连不上 / idle 已暂停
-      offLocalChange: null, // 取消订阅本地改动
       cloudForm: { token: "" }, // 设置弹窗里的 token 输入框
       cloudTokenEditing: false, // 已有 token 时点「更换 token」才展开输入框
       showTokenHelp: false, // 「token 怎么生成」三步说明，默认收起
@@ -832,13 +815,6 @@ export default {
   computed: {
     baseChips() {
       return this.settings.baseChips;
-    },
-    /** 同步状态文案。断线要说清楚，不然用户会以为数据同步了其实没有 */
-    liveLinkText() {
-      if (this.liveLinkStatus === "live") return "已连接，任何改动都会自动同步";
-      if (this.liveLinkStatus === "idle") return "页面在后台，已暂停检查（切回来立即同步）";
-      if (this.liveLinkStatus === "down") return "连不上同步服务，正在重试（改动仍保存在本机）";
-      return "正在连接…";
     },
     /** 结算抽屉的盈亏榜：按盈亏从高到低，并列时用码点序兜底（localeCompare 会抖） */
     resultsSorted() {
@@ -981,30 +957,16 @@ export default {
     this.daily = loadDaily();
     this.cloud = loadCloud();
     this.refreshPlayerOptions();
-    this.liveForm = { endpoint: this.cloud.endpoint || "", room: this.cloud.room || "" };
-    // ⚠️ 实时同步（Deno）已停用：用户是单机记账，不需要多端实时，
-    // 且免费额度会被长连接烧穿（10-20 那次停服就是这么来的）。
-    // 云同步统一走 Gist：打开时检查一次 + 本地改动后自动备份。
-    if (this.cloud.liveEnabled && this.cloud.endpoint && this.cloud.room) {
-      this.syncLiveOnStart();
-    }
     // 任何一处本地写入都会走到这里，改名、删局、抽卡、改底注都能自动备份
     this.offLocalChange = onLocalChange(() => {
-      this.scheduleLivePush();
       this.scheduleCloudBackup();
     });
     // 打开页面先看一眼云端有没有更新的存档 —— 换台电脑登录就靠这一步
     this.checkCloudOnStart();
   },
   beforeDestroy() {
-    this.stopLivePoll();
-    this.clearLivePushTimer();
     this.clearCloudBackupTimer();
     if (typeof this.offLocalChange === "function") this.offLocalChange();
-    if (this.liveWakeHandler) {
-      document.removeEventListener("visibilitychange", this.liveWakeHandler);
-      window.removeEventListener("online", this.liveWakeHandler);
-    }
   },
   methods: {
     format,
@@ -1436,7 +1398,6 @@ export default {
       // 战绩、名册、卡包此时都已落盘，静默推一份到云端。
       // 这一步在结算流程最末尾，成功与否都不影响本局结果。
       this.autoBackupToCloud();
-      this.pushLiveSnapshot(false, true);
     },
 
     /**
@@ -1777,22 +1738,7 @@ export default {
      * 只留底注设置，其余键整体抹掉后直接刷新页面 —— 内存里还有一堆派生状态
      * （今日榜 / 选人 / 卡包 / 奖券），逐个重置容易漏，刷新最干净。
      */
-    async handleWipeData() {
-      // 开了实时同步就得把云端那份也抹掉，
-      // 否则下次连上同一个房间码，旧数据又被当成「更新的」拉回来
-      const cloud = this.cloud;
-      if (cloud && cloud.liveEnabled && cloud.endpoint && cloud.room) {
-        const empty = buildSnapshot({
-          players: [],
-          history: [],
-          settings: this.settings,
-          cards: {},
-        });
-        const pushed = await pushState(cloud.endpoint, cloud.room, empty, true);
-        if (!pushed.ok) {
-          this.$message.warning(`云端那份没能清空：${pushed.reason || "同步失败"}`);
-        }
-      }
+    handleWipeData() {
       Object.values(STORAGE_KEYS).forEach((key) => {
         if (key === STORAGE_KEYS.settings) return;
         window.localStorage.removeItem(key);
@@ -2134,300 +2080,6 @@ export default {
           this.cloud = loadCloud();
           this.cloudForm = { token: "" };
           this.$message.success("已断开云备份");
-        })
-        .catch(() => {});
-    },
-
-    handleRandomRoom() {
-      this.liveForm.room = randomRoom();
-    },
-
-    async handleTestLive() {
-      const endpoint = normalizeEndpoint(this.liveForm.endpoint);
-      if (!endpoint) {
-        this.$message.warning("先填同步服务地址");
-        return;
-      }
-      this.liveBusy = true;
-      try {
-        const result = await pingEndpoint(endpoint);
-        if (result.ok) this.$message.success("服务地址可用");
-        else this.$message.error(result.reason || "连不上同步服务");
-      } finally {
-        this.liveBusy = false;
-      }
-    },
-
-    /** 写云端配置的小工具，保证每次都基于最新的本机配置 */
-    patchCloud(patch) {
-      this.cloud = { ...loadCloud(), ...patch };
-      saveCloud(this.cloud);
-      return this.cloud;
-    },
-
-    /** 连接：先探云端有没有数据，再决定拉还是推 */
-    async handleConnectLive() {
-      const endpoint = normalizeEndpoint(this.liveForm.endpoint);
-      const room = String(this.liveForm.room || "").trim();
-      if (!endpoint) {
-        this.$message.warning("先填同步服务地址");
-        return;
-      }
-      if (!isValidRoom(room)) {
-        this.$message.warning("房间码 4~64 位，只能用字母、数字、下划线和短横线");
-        return;
-      }
-      if (this.liveBusy) return;
-
-      this.liveBusy = true;
-      let remote = null;
-      try {
-        const result = await fetchState(endpoint, room);
-        if (!result.ok) {
-          this.$message.error(result.reason || "读取云端数据失败");
-          return;
-        }
-        remote = result.snapshot;
-      } finally {
-        this.liveBusy = false;
-      }
-
-      this.patchCloud({ endpoint, room });
-
-      if (!remote) {
-        const ok = await this.pushLiveSnapshot(false, false);
-        if (ok) {
-          this.patchCloud({ liveEnabled: true });
-          this.startLivePoll();
-          this.$message.success("已连接，本机数据已上传到云端");
-        }
-        return;
-      }
-
-      // 换设备时本机基线是 0，云端必定更新 —— 一律先问再做
-      const action = decideSync(this.cloud.liveSyncedUpdatedAt || 0, remote.updatedAt);
-      if (action === "download") {
-        const when = this.formatCloudTime(remote.updatedAt);
-        this.$confirm(
-          `云端有更新的数据（${when}），将用它覆盖本机，本机上未同步的改动会丢失。`,
-          "发现云端数据",
-          { confirmButtonText: "用云端的", cancelButtonText: "取消", type: "warning" }
-        )
-          .then(() => {
-            this.applySnapshot(remote);
-            this.patchCloud({
-              liveEnabled: true,
-              liveSyncedUpdatedAt: remote.updatedAt,
-              liveLastSyncAt: Date.now(),
-            });
-            this.startLivePoll();
-            this.$message.success("已连接，本机已同步到最新");
-          })
-          .catch(() => {});
-        return;
-      }
-
-      const ok = await this.pushLiveSnapshot(true, false);
-      if (ok) {
-        this.patchCloud({ liveEnabled: true });
-        this.startLivePoll();
-        this.$message.success("已连接，本机数据已上传");
-      }
-    },
-
-    /**
-     * 推一份快照到云端。
-     * @param {boolean} force true 时以本机为准，覆盖云端更新的数据
-     * @param {boolean} silent true 时成功不弹提示（结算后自动同步用）
-     */
-    async pushLiveSnapshot(force, silent) {
-      const cloud = this.cloud;
-      if (!cloud || !cloud.endpoint || !cloud.room) return false;
-      this.liveBusy = true;
-      try {
-        const snapshot = this.takeSnapshot();
-        const result = await pushState(cloud.endpoint, cloud.room, snapshot, force);
-        if (!result.ok) {
-          const text = result.reason || "同步失败";
-          if (silent) this.$message.warning(`云端同步未成功：${text}`);
-          else this.$message.error(text);
-          return false;
-        }
-        this.patchCloud({
-          liveLastPushAt: Date.now(),
-          liveLastSyncAt: Date.now(),
-          liveSyncedUpdatedAt: snapshot.updatedAt,
-        });
-        if (!silent) this.$message.success("已同步到云端");
-        return true;
-      } finally {
-        this.liveBusy = false;
-      }
-    },
-
-    handleSyncLiveNow() {
-      this.pushLiveSnapshot(true, false);
-    },
-
-    /** 换设备后打开页面：云端更新就静默跟上，否则推一次 */
-    async syncLiveOnStart() {
-      const cloud = this.cloud;
-      if (!cloud || !cloud.endpoint || !cloud.room) return;
-      const result = await fetchState(cloud.endpoint, cloud.room);
-      if (!result.ok || !result.snapshot) return;
-      const remote = result.snapshot;
-      if (remote.updatedAt <= (cloud.liveSyncedUpdatedAt || 0)) {
-        this.pushLiveSnapshot(false, true);
-        return;
-      }
-      this.applySnapshot(remote);
-      this.patchCloud({ liveSyncedUpdatedAt: remote.updatedAt, liveLastSyncAt: Date.now() });
-    },
-
-    /**
-     * 起一轮轮询（实时同步的主通道）。
-     *
-     * 以前用 SSE 长连接，看着更「实时」，但那条连接会让 Deno 实例一直处于加载状态，
-     * 免费额度按 768MB × 每秒计内存时间 —— 一台电脑挂一夜就能把整月额度烧穿，
-     * 平台直接把整个应用停掉（503 USAGE_EXCEEDED）。短轮询能把实例缩容到 0，
-     * 代价是最多 10 秒延迟，换来的是永远不会把额度打爆。
-     */
-    startLivePoll() {
-      this.stopLivePoll();
-      const cloud = this.cloud;
-      if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
-      this.livePolling = true;
-      this.liveFailCount = 0;
-      this.pollLiveOnce();
-    },
-
-    clearLivePollTimer() {
-      if (this.livePollTimer) {
-        clearTimeout(this.livePollTimer);
-        this.livePollTimer = null;
-      }
-    },
-
-    /** 问一次云端有没有新数据，再按结果排下一轮 */
-    async pollLiveOnce() {
-      if (!this.livePolling) return;
-      const cloud = this.cloud;
-      if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
-      if (document.hidden) {
-        // 后台标签页不刷：省额度，也让实例能缩容到 0
-        this.liveLinkStatus = "idle";
-        return;
-      }
-
-      const result = await pollState(cloud.endpoint, cloud.room, cloud.liveSyncedUpdatedAt || 0);
-      if (!this.livePolling) return;
-
-      let delay = 10000;
-      if (result.ok) {
-        this.liveFailCount = 0;
-        this.liveLinkStatus = "live";
-        if (!result.unchanged && result.snapshot) this.applyRemoteSnapshot(result.snapshot);
-      } else {
-        // 连不上就退避，别在服务停服时白刷请求：10s → 20s → 40s → 60s
-        this.liveFailCount += 1;
-        this.liveLinkStatus = "down";
-        delay = Math.min(60000, 10000 * 2 ** Math.min(this.liveFailCount - 1, 3));
-        if (this.liveFailCount === 3) {
-          this.$message.warning(result.reason || "同步服务连不上");
-        }
-      }
-
-      this.livePollTimer = setTimeout(() => {
-        this.livePollTimer = null;
-        this.pollLiveOnce();
-      }, delay);
-    },
-
-    /** 采纳一份云端快照：结算动画期间不打断，自己刚推的那份会被 updatedAt 滤掉 */
-    applyRemoteSnapshot(snapshot) {
-      if (this.settling) return;
-      if (snapshot.updatedAt <= (this.cloud.liveSyncedUpdatedAt || 0)) return;
-      this.applySnapshot(snapshot);
-      this.patchCloud({ liveSyncedUpdatedAt: snapshot.updatedAt, liveLastSyncAt: Date.now() });
-      this.$notify({
-        title: "已同步",
-        message: "另一台设备更新了数据，本机已跟上",
-        type: "success",
-        duration: 2500,
-      });
-    },
-
-    /** 主动补拉一次（切回页面、网络恢复、休眠唤醒时用） */
-    async pullLiveSnapshot() {
-      const cloud = this.cloud;
-      if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
-      if (this.settling) return;
-      const result = await pollState(cloud.endpoint, cloud.room, cloud.liveSyncedUpdatedAt || 0);
-      if (!result.ok) return;
-      if (!result.unchanged && result.snapshot) this.applyRemoteSnapshot(result.snapshot);
-    },
-
-    /** 切回页面 / 网络恢复：立刻补一次，并把节奏拉回 10 秒 */
-    handleLiveWake() {
-      const cloud = this.cloud;
-      if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
-      if (document.hidden) return;
-      if (!this.livePolling) {
-        this.startLivePoll();
-        return;
-      }
-      this.liveFailCount = 0;
-      this.clearLivePollTimer();
-      this.pollLiveOnce();
-    },
-
-    stopLivePoll() {
-      this.livePolling = false;
-      this.clearLivePollTimer();
-    },
-
-    /**
-     * 本地改了数据 → 排队上传。
-     * 一局结算里会连续写好几次盘（名册、流水、卡包），防抖合并成一次请求。
-     * 刚推过就跳过：结算末尾已经推过一次，别再重复。
-     */
-    scheduleLivePush() {
-      const cloud = this.cloud;
-      if (!cloud || !cloud.liveEnabled || !cloud.endpoint || !cloud.room) return;
-      this.clearLivePushTimer();
-      this.livePushTimer = setTimeout(() => {
-        // 结算末尾刚推过一次，这次多半是同一批改动，可以省一次往返。
-        // ⚠️ 但绝不能直接丢弃 —— 一丢了这次改动就再也没机会上去了。
-        if (Date.now() - (this.cloud.liveLastPushAt || 0) < 2000) {
-          this.livePushTimer = setTimeout(() => {
-            this.livePushTimer = null;
-            this.pushLiveSnapshot(false, true);
-          }, 2000);
-          return;
-        }
-        this.livePushTimer = null;
-        this.pushLiveSnapshot(false, true);
-      }, 1200);
-    },
-
-    clearLivePushTimer() {
-      if (this.livePushTimer) {
-        clearTimeout(this.livePushTimer);
-        this.livePushTimer = null;
-      }
-    },
-
-    handleDisconnectLive() {
-      this.$confirm(
-        "断开后本机不再自动同步；云端数据会保留，重新填同一个地址和房间码即可接回。",
-        "断开实时同步",
-        { confirmButtonText: "断开", cancelButtonText: "取消", type: "warning" }
-      )
-        .then(() => {
-          this.stopLivePoll();
-          this.patchCloud({ liveEnabled: false, endpoint: "", room: "" });
-          this.liveForm = { endpoint: "", room: "" };
-          this.$message.success("已断开实时同步");
         })
         .catch(() => {});
     },
