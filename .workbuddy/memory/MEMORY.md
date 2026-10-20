@@ -92,7 +92,18 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 `public/manifest.json`（`start_url "./"`、`display: standalone`、192/512/maskable 三张图）+ `index.html` 里的
 manifest / theme-color / apple-touch-icon / iOS 三个私有 meta。**不加 Service Worker**（单机记账要读最新账，缓存会给旧数）。
 - 图标源文件是脚本：`.workbuddy/scripts/make-pwa-icons.py`（纯 Python 写 PNG，零依赖）→ 输出到 `public/`。
-  改图形调 `in_spade()` / `graphic_scale` 后重跑即可，别手工 P 图覆盖。
+  改图形调 `SPADE_PATH` / `graphic_scale` 后重跑即可，别手工 P 图覆盖。
+- ⚠️ **黑桃只能用贝塞尔轮廓，不能拿「三角 + 两个圆」拼**：圆与三角只能靠遮挡衔接，翼会又胖又钝、
+  梗像根柱子从圆底下戳出来，缩小到 48px 就是一朵梅花（第一版就是这么翻车的）。
+  现用 10 段 M/C 路径：尖顶 → 外扩翼 → 缓弧翼底 → 内凹收腰 → 外扩梗 → 镜像。
+- ⚠️ **梗两侧控制点的 x 必须单调内收**：写成「先外扩再回勾」会在谷底鼓出两个尖包，像条裤子。
+- ⚠️ **横向要压到 0.78**（24 网格原轮廓宽/高≈0.97，直接照搬矮胖，压完≈0.71 才像字体里的 ♠）。
+- 配色在 `PALETTES` 字典里三套（navy-gold / ivory-navy / crimson-ivory），`PALETTE` 常量选一套；
+  `--compare` 参数出三套并排对比图。金色**只做竖直渐变 + 很弱的左上受光**，
+  再加"右下背光"会在梗附近压出不均匀暗斑、看着发脏（踩过）。
+- `--compare` 与多尺寸预览都走 `preview()`（512/192/96/64/48/32 并排）——**小尺寸才是手机桌面的真实观感**，
+  只盯 512 调容易自嗨。
+
 - ⚠️ `apple-mobile-web-app-status-bar-style` 用 `black`，`black-translucent` 会让内容顶到状态栏底下。
 - ⚠️ manifest 与所有图标路径必须相对（`<%= BASE_URL %>`），否则 GitHub Pages 子路径下认不到。
 - ❌ 不再考虑拆 `GameDetail.vue`、也不搬 `.workbuddy/scripts`：前者风险大于收益，后者零收益（2026-10-20 定）。
