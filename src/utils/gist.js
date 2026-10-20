@@ -119,3 +119,23 @@ export async function checkToken(token) {
   await request(API_BASE, { token });
   return true;
 }
+
+/**
+ * 按内容找出云端存档的 id。
+ *
+ * ⚠️ 这个函数是「换设备能用」的关键：gistId 只存在第一台电脑的本机，
+ * 新设备光有 token 是不知道存档在哪的。所以不靠本机记忆，而是把该 token
+ * 名下的 gist 列出来，按备份文件名认领。
+ *
+ * @returns {Promise<string>} 存档 id；一份都没有时返回空串
+ */
+export async function findGistId(token) {
+  // per_page 拉满一页足够，个人备份不可能上百份
+  const data = await request(`${API_BASE}?per_page=100`, { token });
+  const list = Array.isArray(data) ? data : [];
+  const hits = list.filter((gist) => gist && gist.files && gist.files[GIST_FILENAME]);
+  if (!hits.length) return "";
+  // 万一历史上建过重复的，认最近更新过的那份（内容最新）
+  hits.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+  return String(hits[0].id || "");
+}

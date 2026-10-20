@@ -551,7 +551,8 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="实时同步">
+        <!-- 实时同步已停用：用户是单机记账，且免费额度会被长连接烧穿。折叠保留，不干扰 -->
+        <el-form-item v-if="showLiveSync" label="实时同步">
           <template v-if="cloud && cloud.liveEnabled">
             <div class="cloud-status">
               <i
@@ -658,7 +659,13 @@
             </div>
           </template>
           <div class="form-tip">
-            存档放在 GitHub Gist，免费且不会因闲置被清空。token 只存本机，不会上传。
+            存档放在 GitHub Gist，免费且不会因闲置被清空。换台电脑填同一个 token，打开页面会自动
+            提示恢复；本地任何改动也会自动备份。token 只存本机，不会上传。
+          </div>
+          <div class="form-tip">
+            <el-link type="info" :underline="false" @click="showLiveSync = !showLiveSync">
+              {{ showLiveSync ? "收起高级选项" : "旧版实时同步（已停用）" }}
+            </el-link>
           </div>
         </el-form-item>
       </el-form>
@@ -747,7 +754,12 @@ import {
   muteLocalChange,
 } from "../core/storage";
 import { buildSnapshot, parseSnapshot, decideSync, isSnapshotTooBig } from "../core/sync";
-import { createGist, updateGist, fetchGist } from "../utils/gist";
+import {
+  createGist,
+  updateGist,
+  fetchGist,
+  findGistId,
+} from "../utils/gist";
 import {
   normalizeEndpoint,
   isValidRoom,
@@ -836,6 +848,8 @@ export default {
       avatarPickerName: "", // 正在给谁换头像
       cloud: null, // 云备份配置（token / gistId / 上次同步），只在本机
       cloudBusy: false, // 正在上传或下载，防重复点击
+      cloudBackupTimer: null, // 本地改动后的防抖备份定时器，非响应式
+      showLiveSync: false, // 旧版实时同步（Deno）默认收起，见上方说明
       liveForm: { endpoint: "", room: "" }, // 实时同步表单
       liveBusy: false,
       livePolling: false, // 轮询开关，非响应式
@@ -1000,20 +1014,24 @@ export default {
     this.cloud = loadCloud();
     this.refreshPlayerOptions();
     this.liveForm = { endpoint: this.cloud.endpoint || "", room: this.cloud.room || "" };
+    // ⚠️ 实时同步（Deno）已停用：用户是单机记账，不需要多端实时，
+    // 且免费额度会被长连接烧穿（10-20 那次停服就是这么来的）。
+    // 云同步统一走 Gist：打开时检查一次 + 本地改动后自动备份。
     if (this.cloud.liveEnabled && this.cloud.endpoint && this.cloud.room) {
       this.syncLiveOnStart();
-      this.startLivePoll();
     }
-    // 任何一处本地写入都会走到这里，改名、删局、抽卡、改底注都能自动跟上云端
-    this.offLocalChange = onLocalChange(() => this.scheduleLivePush());
-    // 切回页面 / 休眠唤醒 / 网络恢复：立刻补一次，不等下一轮定时器
-    this.liveWakeHandler = () => this.handleLiveWake();
-    document.addEventListener("visibilitychange", this.liveWakeHandler);
-    window.addEventListener("online", this.liveWakeHandler);
+    // 任何一处本地写入都会走到这里，改名、删局、抽卡、改底注都能自动备份
+    this.offLocalChange = onLocalChange(() => {
+      this.scheduleLivePush();
+      this.scheduleCloudBackup();
+    });
+    // 打开页面先看一眼云端有没有更新的存档 —— 换台电脑登录就靠这一步
+    this.checkCloudOnStart();
   },
   beforeDestroy() {
     this.stopLivePoll();
     this.clearLivePushTimer();
+    this.clearCloudBackupTimer();
     if (typeof this.offLocalChange === "function") this.offLocalChange();
     if (this.liveWakeHandler) {
       document.removeEventListener("visibilitychange", this.liveWakeHandler);
@@ -1866,6 +1884,56 @@ export default {
     },
 
     /**
+     * 本机没有 gistId 时去云端认领一份。
+     * 换设备登录后就是这种状态 —— 只记得 token，不知道存档在哪。
+     */
+    async resolveGistId(token) {
+      try {
+        return await findGistId(token);
+      } catch (error) {
+        return ""; // 认领失败不影响后续：拿不到就当没有，走新建
+      }
+    },
+
+    /**
+     * 上传前的安全闸。
+     *
+     * 本机 syncedUpdatedAt 为 0 = 这台设备从没跟云端对过账，而云端已经有存档
+     * —— 说明本机大概率是台新设备（数据可能是空的）。这时候拿本机覆盖云端，
+     * 等于把真数据抹掉，是本项目最容易出事的一步，必须先问。
+     *
+     * @returns {Promise<boolean>} true 表示可以放心上传
+     */
+    async guardBeforeUpload(gistId, silent) {
+      const cloud = this.cloud;
+      if (cloud.syncedUpdatedAt) return true; // 对过账了，正常覆盖
+
+      let parsed = null;
+      try {
+        parsed = parseSnapshot(await fetchGist(cloud.token, gistId));
+      } catch (error) {
+        return true; // 云端读不出来，就当它没有
+      }
+      if (!parsed.ok) return true;
+
+      if (silent) {
+        // 自动备份不自作主张，交给启动时那句提示去问用户
+        return false;
+      }
+      const when = this.formatCloudTime(parsed.snapshot.updatedAt);
+      try {
+        await this.$confirm(
+          `云端已有一份存档（${when}），而本机还没同步过。继续上传会用本机数据覆盖它。`,
+          "确认覆盖云端存档",
+          { confirmButtonText: "仍要覆盖", cancelButtonText: "取消", type: "warning" }
+        );
+        return true;
+      } catch (error) {
+        return false; // 用户取消
+      }
+    },
+
+    /**
      * 上传到云端。没有 gistId 就先建一个 secret gist。
      * @param {boolean} silent true 时成功不弹提示（结算后自动备份用）
      */
@@ -1876,7 +1944,10 @@ export default {
       try {
         const snapshot = this.takeSnapshot();
         const content = JSON.stringify(snapshot);
-        let gistId = cloud.gistId;
+        // ⚠️ 本机没记着 gistId 不代表云端没有（换设备就是这种状态）。
+        // 先去认领一份，认不到才新建 —— 否则会建出第二份空存档，把真数据顶掉
+        let gistId = cloud.gistId || (await this.resolveGistId(cloud.token));
+        if (gistId && !(await this.guardBeforeUpload(gistId, silent))) return false;
 
         if (!gistId) {
           gistId = await createGist(cloud.token, content);
@@ -1916,6 +1987,26 @@ export default {
       this.uploadSnapshot(true);
     },
 
+    /**
+     * 本地任何改动后的防抖备份。
+     * 一局结算会连写三四次盘（players / history / settings / cards），
+     * 防抖把它们合并成一次请求，省得来回折腾 GitHub。
+     */
+    scheduleCloudBackup() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.token || !cloud.autoBackup) return;
+      this.clearCloudBackupTimer();
+      this.cloudBackupTimer = setTimeout(() => {
+        this.cloudBackupTimer = null;
+        this.uploadSnapshot(true);
+      }, 3000);
+    },
+
+    clearCloudBackupTimer() {
+      if (this.cloudBackupTimer) clearTimeout(this.cloudBackupTimer);
+      this.cloudBackupTimer = null;
+    },
+
     handleSaveCloudToken() {
       const token = String(this.cloudForm.token || "").trim();
       if (!token) {
@@ -1936,23 +2027,59 @@ export default {
       this.uploadSnapshot(false);
     },
 
+    /**
+     * 弹框问要不要用云端存档覆盖本机，确认后落盘。
+     * 换设备登录时 syncedUpdatedAt 为 0，文案要说清「本机还没同步过」。
+     */
+    promptRestore(snapshot) {
+      const when = snapshot.updatedAt ? this.formatCloudTime(snapshot.updatedAt) : "未知时间";
+      const fresh = !(this.cloud && this.cloud.syncedUpdatedAt);
+      this.$confirm(
+        fresh
+          ? `云端有一份存档（${when}），本机还没同步过。要现在恢复吗？`
+          : `云端存档比本机新（${when}），恢复后本机未备份的改动会丢失。`,
+        "发现云端存档",
+        { confirmButtonText: "恢复", cancelButtonText: "暂不", type: "warning" }
+      )
+        .then(() => {
+          this.applySnapshot(snapshot);
+          this.cloud = {
+            ...this.cloud,
+            syncedUpdatedAt: snapshot.updatedAt,
+            lastSyncAt: Date.now(),
+          };
+          saveCloud(this.cloud);
+          this.$message.success("已从云端恢复");
+        })
+        .catch(() => {});
+    },
+
     async handleRestoreFromCloud() {
       const cloud = this.cloud;
       if (!cloud || !cloud.token) {
         this.$message.warning("请先填写并保存 token");
         return;
       }
-      if (!cloud.gistId) {
-        this.$message.warning("本机还没有云端存档，先点一次「立即备份」");
-        return;
-      }
       if (this.cloudBusy) return;
-
       this.cloudBusy = true;
+
+      let gistId = cloud.gistId;
       let snapshot = null;
       try {
-        const raw = await fetchGist(cloud.token, cloud.gistId);
-        const parsed = parseSnapshot(raw);
+        if (!gistId) {
+          // 换设备后本机不记得存档在哪，只凭 token 去云端认领
+          gistId = await findGistId(cloud.token);
+          if (!gistId) {
+            this.$message.warning(
+              "这个 token 名下还没有云端存档，先在有数据的那台电脑上点一次「立即备份」"
+            );
+            return;
+          }
+          // 认领成功就记到本机，省得以后每次都列一遍
+          this.cloud = { ...this.cloud, gistId };
+          saveCloud(this.cloud);
+        }
+        const parsed = parseSnapshot(await fetchGist(cloud.token, gistId));
         if (!parsed.ok) throw new Error(parsed.reason);
         snapshot = parsed.snapshot;
       } catch (error) {
@@ -1962,27 +2089,36 @@ export default {
         this.cloudBusy = false;
       }
 
-      const when = snapshot.updatedAt ? this.formatCloudTime(snapshot.updatedAt) : "未知时间";
-      // 拿上次同步的快照时间当本机基线：换设备时它是 0，云端必定更新
-      const action = decideSync(cloud.syncedUpdatedAt || 0, snapshot.updatedAt);
-      const tip =
-        action === "download"
-          ? `云端存档比本机新（${when}），恢复后本机未备份的改动会丢失。`
-          : `将用云端存档（${when}）覆盖本机，本机未备份的改动会丢失。`;
+      this.promptRestore(snapshot);
+    },
 
-      // 单写者场景，但换设备时本机可能是旧数据 —— 一律先问再做
-      this.$confirm(tip, "从云端恢复", {
-        confirmButtonText: "覆盖本机",
-        cancelButtonText: "取消",
-        type: "warning",
-      })
-        .then(() => {
-          this.applySnapshot(snapshot);
-          this.cloud = { ...this.cloud, syncedUpdatedAt: snapshot.updatedAt };
-          saveCloud(this.cloud);
-          this.$message.success("已从云端恢复");
-        })
-        .catch(() => {});
+    /**
+     * 打开页面时主动看一眼云端 —— 这是「换台电脑也能拿到最新数据」的落地处。
+     * 新设备 syncedUpdatedAt 是 0，云端必定更新 → 提示恢复；
+     * 同一台电脑自己打开时两边时间一致，不会打扰。
+     */
+    async checkCloudOnStart() {
+      const cloud = this.cloud;
+      if (!cloud || !cloud.token) return;
+      try {
+        let gistId = cloud.gistId;
+        if (!gistId) {
+          gistId = await this.resolveGistId(cloud.token);
+          if (gistId) {
+            this.cloud = { ...this.cloud, gistId };
+            saveCloud(this.cloud);
+          }
+        }
+        if (!gistId) return;
+        const parsed = parseSnapshot(await fetchGist(cloud.token, gistId));
+        if (!parsed.ok) return;
+        // 本机已经跟云端一样新，就不用问了
+        if (parsed.snapshot.updatedAt <= (this.cloud.syncedUpdatedAt || 0)) return;
+        this.promptRestore(parsed.snapshot);
+      } catch (error) {
+        // 启动检查失败不弹窗打扰，记日志即可；用户仍能手动点恢复
+        console.warn("[cloud] 启动时检查云端存档失败", error);
+      }
     },
 
     handleDisconnectCloud() {
