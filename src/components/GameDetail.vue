@@ -614,69 +614,88 @@
         </el-form-item>
 
         <el-form-item label="云备份">
-          <template v-if="cloud && cloud.token && !cloudTokenEditing">
-            <div class="cloud-status">
-              <i class="el-icon-success"></i>
-              <span>{{ cloud.gistId ? "已连接到云端" : "token 已保存，还没备份过" }}</span>
-            </div>
-            <div class="form-tip">
-              上次备份：{{
-                cloud.lastSyncAt ? formatCloudTime(cloud.lastSyncAt) : "还没有备份过"
-              }}
-            </div>
-            <div class="backup-actions cloud-actions">
-              <el-button
+          <!-- 一张浅蓝卡片收住「状态 / 上次备份 / 动作 / 断开」，别把按钮和说明摊成一堆灰字 -->
+          <div class="cloud-card" :class="{ 'is-off': !cloud || !cloud.token || cloudTokenEditing }">
+            <template v-if="cloud && cloud.token && !cloudTokenEditing">
+              <div class="cloud-head">
+                <i class="cloud-dot"></i>
+                <span class="cloud-title">{{
+                  cloud.gistId ? "已连接到云端" : "等待首次备份"
+                }}</span>
+                <span class="cloud-meta">
+                  {{ cloud.lastSyncAt ? formatCloudTime(cloud.lastSyncAt) : "尚未备份" }}
+                </span>
+              </div>
+              <div class="cloud-btns">
+                <el-button size="small" type="primary" :loading="cloudBusy" @click="handleBackupNow"
+                  >立即备份</el-button
+                >
+                <el-button
+                  size="small"
+                  :disabled="cloudBusy"
+                  @click="handleRestoreFromCloud"
+                  >从云端恢复</el-button
+                >
+                <el-button size="small" @click="startEditCloudToken">更换 token</el-button>
+              </div>
+              <div class="cloud-foot">
+                <el-link class="cloud-unlink" :underline="false" @click="handleDisconnectCloud"
+                  >断开连接</el-link
+                >
+                <span class="cloud-foot__hint">不会删除云端存档</span>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="cloud-head">
+                <i class="cloud-dot is-off"></i>
+                <span class="cloud-title">{{
+                  cloudTokenEditing ? "更换 token" : "还没开启云备份"
+                }}</span>
+              </div>
+              <el-input
+                v-model="cloudForm.token"
+                class="cloud-input"
                 size="small"
-                icon="el-icon-upload"
-                :loading="cloudBusy"
-                @click="handleBackupNow"
-                >立即备份</el-button
-              >
-              <el-button
-                size="small"
-                icon="el-icon-refresh-left"
-                :disabled="cloudBusy"
-                @click="handleRestoreFromCloud"
-                >从云端恢复</el-button
-              >
-              <el-button size="small" icon="el-icon-edit" @click="startEditCloudToken"
-                >更换 token</el-button
-              >
-              <el-button size="small" icon="el-icon-circle-close" @click="handleDisconnectCloud"
-                >断开</el-button
-              >
-            </div>
-          </template>
-          <template v-else>
-            <el-input
-              v-model="cloudForm.token"
-              size="small"
-              type="password"
-              show-password
-              placeholder="粘贴 classic token（ghp_ 开头，只保存在本机）"
-            ></el-input>
-            <div class="backup-actions cloud-actions">
-              <el-button size="small" type="primary" @click="handleSaveCloudToken"
-                >保存 token</el-button
-              >
-              <el-button v-if="cloudTokenEditing" size="small" @click="cancelEditCloudToken"
-                >取消</el-button
-              >
-            </div>
-            <div v-if="cloudTokenEditing" class="form-tip">
-              换的是同一个 GitHub 账号的 token 就没关系：存档按文件名认领，换完点「立即备份」
-              会自动接回原来那一份。换成别的账号的 token，等于换了个网盘，旧存档就找不到了。
-            </div>
-          </template>
-          <div class="form-tip">
-            存档放在 GitHub Gist，免费且不会因闲置被清空。换台电脑填同一个 token，打开页面会自动
-            提示恢复；本地任何改动也会自动备份。token 只存本机，不会上传。
+                type="password"
+                show-password
+                placeholder="粘贴 classic token（ghp_ 开头）"
+              ></el-input>
+              <div class="cloud-btns" :class="{ 'is-pair': cloudTokenEditing }">
+                <el-button size="small" type="primary" @click="handleSaveCloudToken"
+                  >保存 token</el-button
+                >
+                <el-button v-if="cloudTokenEditing" size="small" @click="cancelEditCloudToken"
+                  >取消</el-button
+                >
+              </div>
+              <div v-if="cloudTokenEditing" class="cloud-foot">
+                <span class="cloud-foot__hint">
+                  同一 GitHub 账号换 token 会自动接回原存档；换成别的账号 = 换了个网盘
+                </span>
+              </div>
+            </template>
           </div>
-          <div class="form-tip">
-            必须是 <b>classic</b> token（Developer settings → Personal access tokens → Tokens
-            (classic)），只勾 <b>gist</b>。细粒度 token（github_pat_ 开头）没有 Gist 权限，用不了。
+
+          <div class="cloud-tips">
+            <p class="form-tip">
+              存档存 GitHub Gist，免费不会清空。换电脑填同一个 token 即可恢复，本机改动 3 秒后
+              自动备份。
+            </p>
+            <el-link class="cloud-more" type="info" :underline="false" @click="showTokenHelp = !showTokenHelp">
+              {{ showTokenHelp ? "收起生成步骤" : "token 怎么生成？" }}
+            </el-link>
+            <div v-if="showTokenHelp" class="cloud-help">
+              <p>1 · 头像 → Settings → Developer settings → Personal access tokens → <b>Tokens (classic)</b></p>
+              <p>2 · Expiration 选 <b>No expiration</b>，Scopes 只勾 <b>gist</b>，别的都别勾</p>
+              <p>3 · Generate 后立刻复制（关掉就看不到了），粘到上面保存</p>
+              <p class="cloud-help__warn">
+                细粒度 token（github_pat_ 开头）没有 Gist 权限，填了会一直同步不了
+              </p>
+            </div>
           </div>
-          <div class="form-tip">
+
+          <div class="cloud-legacy">
             <el-link type="info" :underline="false" @click="showLiveSync = !showLiveSync">
               {{ showLiveSync ? "收起高级选项" : "旧版实时同步（已停用）" }}
             </el-link>
@@ -875,6 +894,7 @@ export default {
       offLocalChange: null, // 取消订阅本地改动
       cloudForm: { token: "" }, // 设置弹窗里的 token 输入框
       cloudTokenEditing: false, // 已有 token 时点「更换 token」才展开输入框
+      showTokenHelp: false, // 「token 怎么生成」三步说明，默认收起
     };
   },
   computed: {
@@ -3603,6 +3623,127 @@ export default {
   gap: 6px;
   font-size: 13px;
   color: #67c23a;
+}
+
+/* 云备份卡片：状态、上次备份、动作、断开各归其位，靠留白分层，不再堆一串灰字 */
+.cloud-card {
+  padding: 11px 12px 9px;
+  border: 1px solid #e1e7f6;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8faff 0%, #f2f5fd 100%);
+}
+.cloud-card.is-off {
+  border-style: dashed;
+  border-color: #e5eaf4;
+  background: #fafbfe;
+}
+.cloud-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cloud-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: #67c23a;
+  box-shadow: 0 0 0 3px rgba(103, 194, 58, 0.15);
+}
+.cloud-dot.is-off {
+  background: #c3c9d6;
+  box-shadow: 0 0 0 3px rgba(195, 201, 214, 0.16);
+}
+.cloud-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #22335f;
+}
+.cloud-meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: #9aa2b6;
+  white-space: nowrap;
+}
+.cloud-btns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.cloud-btns.is-pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* el-button 默认给相邻按钮加 margin-left，网格里会顶歪 */
+.cloud-btns .el-button {
+  margin-left: 0;
+  width: 100%;
+  padding: 7px 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cloud-input {
+  margin-top: 10px;
+}
+.cloud-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+}
+/* 断开是不可逆的次要动作：平时灰着不抢眼，悬停才转红 */
+.cloud-foot .cloud-unlink {
+  font-size: 12px;
+  flex: none;
+  color: #9aa2b6;
+  transition: color 0.15s;
+}
+.cloud-foot .cloud-unlink:hover {
+  color: #f56c6c;
+}
+.cloud-foot__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a4abbc;
+}
+.cloud-tips {
+  margin-top: 7px;
+}
+.cloud-tips .form-tip {
+  margin: 0;
+}
+.cloud-more {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cloud-help {
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px dashed #e1e7f6;
+  border-radius: 8px;
+  background: #f8faff;
+}
+.cloud-help p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.75;
+  color: #7b8398;
+}
+.cloud-help b {
+  color: #3a55c8;
+  font-weight: 600;
+}
+.cloud-help .cloud-help__warn {
+  color: #d99a2b;
+}
+.cloud-legacy {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid #eef1f8;
+  font-size: 12px;
+}
+.cloud-legacy .el-link {
+  font-size: 12px;
 }
 .upload-inline {
   display: inline-block;
