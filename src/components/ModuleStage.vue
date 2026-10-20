@@ -47,7 +47,7 @@
           :players="players"
         />
         <div v-else-if="current === 'rank'" class="stage__plain">
-          <rank-table :data="ranking" />
+          <rank-table :data="ranking" :compact="isCompact" />
         </div>
         <history-panel
           v-else-if="current === 'history'"
@@ -81,6 +81,7 @@ import HistoryPanel from "./HistoryPanel.vue";
 import AchievementWall from "./AchievementWall.vue";
 import CardCollection from "./CardCollection.vue";
 import RankTable from "./RankTable.vue";
+import responsive from "../mixins/responsive";
 
 /** 模块中心里的七个视图，顺序即顶部 Tab 顺序 */
 const MODULES = [
@@ -97,6 +98,7 @@ const CLOSE_MS = 220;
 
 export default {
   name: "ModuleStage",
+  mixins: [responsive],
   components: {
     DataDashboard,
     RecordBoard,
@@ -352,6 +354,51 @@ export default {
   }
   .stage__panel {
     padding: 16px;
+  }
+}
+
+/* 窄屏：品牌 + 关闭挤一行，Tab 换到第二行横向滚 —— 原来三者同行，
+   Tab 被压到只剩两三个图标可见 */
+@media (max-width: 768px) {
+  .stage__bar {
+    height: auto;
+    padding: 8px 12px 6px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .stage__brand {
+    flex: 1;
+    min-width: 0;
+  }
+  .stage__title {
+    font-size: 14px;
+  }
+  .stage__tabs {
+    order: 3;
+    flex: 0 0 100%;
+    gap: 4px;
+    padding-bottom: 2px;
+  }
+  .stage__tab {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+  /* 角落里只留一个关闭图标，长文案在手机上纯占位 */
+  .stage__close {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+  .stage__close span {
+    display: none;
+  }
+  .stage__body {
+    padding: 10px;
+  }
+  .stage__panel {
+    padding: 12px;
+    border-radius: 12px;
   }
 }
 </style>

@@ -138,12 +138,12 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="名次" width="56">
+          <el-table-column label="名次" :width="isMobile ? 48 : 56">
             <template slot-scope="scope">
               <span :class="rankClass(scope.$index)">{{ scope.$index + 1 }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="玩家" min-width="110">
+          <el-table-column label="玩家" :min-width="isMobile ? 92 : 110">
             <template slot-scope="scope">
               <span>{{ scope.row.name }}</span>
               <el-tag
@@ -155,16 +155,16 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="出勤" width="72">
+          <el-table-column v-if="!isMobile" label="出勤" width="72">
             <template slot-scope="scope">{{ scope.row.games }} 局</template>
           </el-table-column>
-          <el-table-column label="胜 / 负 / 平" width="100">
+          <el-table-column v-if="!isMobile" label="胜 / 负 / 平" width="100">
             <template slot-scope="scope">{{ recordOf(scope.row) }}</template>
           </el-table-column>
-          <el-table-column label="胜率" width="70">
+          <el-table-column v-if="!isMobile" label="胜率" width="70">
             <template slot-scope="scope">{{ winRateOf(scope.row) }}</template>
           </el-table-column>
-          <el-table-column label="连胜状态" width="104">
+          <el-table-column v-if="!isMobile" label="连胜状态" width="104">
             <template slot-scope="scope">
               <div :class="streakClass(scope.row.current)">
                 {{ formatStreak(scope.row.current) }}
@@ -174,14 +174,14 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="最佳单局" width="92">
+          <el-table-column v-if="!isMobile" label="最佳单局" width="92">
             <template slot-scope="scope">
               <span :class="signClass(scope.row.bestDelta)">{{
                 formatSigned(scope.row.bestDelta)
               }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="赛季积分" width="92">
+          <el-table-column label="赛季积分" :width="isMobile ? 84 : 92">
             <template slot-scope="scope">
               <span :class="signClass(scope.row.score)">{{
                 formatSigned(scope.row.score)
@@ -214,7 +214,7 @@
       >          <el-table-column label="赛季" width="88">
           <template slot-scope="scope">{{ scope.row.label }}</template>
         </el-table-column>
-        <el-table-column label="区间" min-width="170">
+        <el-table-column v-if="!isMobile" label="区间" min-width="170">
           <template slot-scope="scope">{{ scope.row.period }}</template>
         </el-table-column>
         <el-table-column label="局数" width="70">
@@ -263,6 +263,7 @@ import {
 } from "../core/season";
 import { formatStreak } from "../core/streak";
 import { format, formatSigned, toCents, fromCents } from "../core/money";
+import responsive from "../mixins/responsive";
 
 echarts.use([
   LineChart,
@@ -289,6 +290,7 @@ const CROSS_PALETTE = [
 
 export default {
   name: "SeasonRank",
+  mixins: [responsive],
   props: {
     history: { type: Array, default: () => [] },
     players: { type: Array, default: () => [] },
@@ -784,6 +786,24 @@ export default {
 .sub-row__record {
   color: #909399;
   font-size: 12px;
+}
+
+/* 手机：三个指标并排会让「老张 +30.00」竖着排，改成一列整行读 */
+@media (max-width: 768px) {
+  .metrics {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .metric {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+  }
+  .champion {
+    padding: 12px 14px;
+  }
 }
 </style>
 

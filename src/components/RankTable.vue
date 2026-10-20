@@ -31,8 +31,8 @@
         </div>
       </template>
     </el-table-column>
-    <el-table-column type="index" width="44"></el-table-column>
-    <el-table-column label="玩家" min-width="104">
+    <el-table-column type="index" :width="compact ? 36 : 44"></el-table-column>
+    <el-table-column label="玩家" :min-width="compact ? 96 : 104">
       <template slot-scope="scope">
         <div class="cell-name">
           <player-avatar
@@ -57,21 +57,27 @@
     <el-table-column
       prop="score"
       label="胜/负"
-      width="70"
+      :width="compact ? 62 : 70"
       :formatter="formatRecord"
     ></el-table-column>
+    <!-- 窄屏收掉「胜率」「状态」两列：留着就得横向拖表格，胜/负本身已经含了这两项的大半信息 -->
     <el-table-column
+      v-if="!compact"
       prop="score"
       label="胜率"
       width="62"
       :formatter="formatWinRate"
     ></el-table-column>
-    <el-table-column label="状态" width="62">
+    <el-table-column v-if="!compact" label="状态" width="62">
       <template slot-scope="scope">
         <span :class="stateClass(scope.row)">{{ formatState(scope.row) }}</span>
       </template>
     </el-table-column>
-    <el-table-column prop="score" label="积分" width="78">
+    <el-table-column
+      prop="score"
+      label="积分"
+      :width="compact ? 80 : 78"
+    >
       <template slot-scope="scope">
         <span :class="scoreClass(scope.row.score)">{{
           format(scope.row.score)
@@ -98,6 +104,11 @@ export default {
     showExpand: {
       type: Boolean,
       default: true,
+    },
+    /** 窄屏精简：收掉胜率 / 状态两列，让表格不横向滚动 */
+    compact: {
+      type: Boolean,
+      default: false,
     },
   },
   methods: {

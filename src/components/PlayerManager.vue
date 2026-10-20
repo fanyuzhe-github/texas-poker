@@ -27,6 +27,92 @@
 
     <el-empty v-if="!players.length" description="还没有任何玩家"></el-empty>
 
+    <!-- 窄屏：表格 5 列最少 585px，操作按钮会被推到屏幕外；换成卡片，动作直接摊在卡里 -->
+    <div v-else-if="isMobile" class="pm-list">
+      <div v-for="item in players" :key="item.name" class="pm-card">
+        <div class="pm-card__head">
+          <player-avatar :name="item.name" :avatar="item.avatar" :size="30" />
+          <div class="pm-card__id">
+            <b class="pm-card__name">{{ item.name }}</b>
+            <span class="pm-card__tags">
+              <el-tag
+                v-if="item.children && item.children.length"
+                size="mini"
+                type="info"
+                >{{ item.children.length }} 个子账号</el-tag
+              >
+              <el-tag v-else-if="item.isMain === true" size="mini" type="warning"
+                >主账号</el-tag
+              >
+              <el-tag v-else size="mini" type="success">独立号</el-tag>
+            </span>
+          </div>
+          <span class="pm-card__score" :class="scoreClass(item.score)">{{
+            format(item.score)
+          }}</span>
+        </div>
+        <div class="pm-card__meta">
+          <span>场次 {{ totalGames(item) }}</span>
+          <span class="pm-card__acts">
+            <el-button type="text" size="mini" @click="handleEditAvatar(item)"
+              >头像</el-button
+            >
+            <el-button type="text" size="mini" @click="handleAddSub(item)"
+              >子账号</el-button
+            >
+            <el-button type="text" size="mini" @click="handleRename(item)"
+              >改名</el-button
+            >
+            <el-button
+              type="text"
+              size="mini"
+              style="color: #f56c6c"
+              @click="handleRemove(item)"
+              >删除</el-button
+            >
+          </span>
+        </div>
+        <div v-if="item.children && item.children.length" class="pm-card__subs">
+          <div
+            v-for="child in item.children"
+            :key="child.name"
+            class="pm-sub"
+          >
+            <div class="pm-sub__head">
+              <player-avatar
+                :name="child.name"
+                :avatar="child.avatar"
+                :size="20"
+              />
+              <span class="pm-sub__name">{{ child.name }}</span>
+              <span class="pm-sub__meta">{{ totalGames(child) }} 场</span>
+              <span class="pm-sub__score" :class="scoreClass(child.score)">{{
+                format(child.score)
+              }}</span>
+            </div>
+            <div class="pm-sub__acts">
+              <el-button type="text" size="mini" @click="handleEditAvatar(child)"
+                >头像</el-button
+              >
+              <el-button type="text" size="mini" @click="handleRename(child)"
+                >改名</el-button
+              >
+              <el-button type="text" size="mini" @click="handleDetach(child)"
+                >解绑</el-button
+              >
+              <el-button
+                type="text"
+                size="mini"
+                style="color: #f56c6c"
+                @click="handleRemove(child)"
+                >删除</el-button
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <el-table v-else :data="players" size="small" max-height="440">
       <el-table-column type="expand">
         <template slot-scope="scope">
@@ -185,9 +271,11 @@
 <script>
 import { format } from "../core/money";
 import PlayerAvatar from "./PlayerAvatar.vue";
+import responsive from "../mixins/responsive";
 
 export default {
   name: "PlayerManager",
+  mixins: [responsive],
   components: { PlayerAvatar },
   props: {
     visible: {
@@ -429,5 +517,107 @@ export default {
 .score--lose {
   color: #67c23a;
   font-weight: 600;
+}
+
+/* ---------------- 窄屏卡片列表 ---------------- */
+.pm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pm-card {
+  padding: 10px 12px;
+  border: 1px solid var(--pk-line);
+  border-radius: 12px;
+  background: #fff;
+}
+.pm-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pm-card__id {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pm-card__name {
+  font-size: 14px;
+  color: var(--pk-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-card__tags {
+  display: flex;
+  gap: 4px;
+}
+.pm-card__score {
+  margin-left: auto;
+  flex: none;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+/* 场次与动作同一行：左边数字、右边按钮，比表格更省高度 */
+.pm-card__meta {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--pk-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--pk-ink-3);
+}
+.pm-card__acts {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+/* el-button 相邻会加 margin-left，这里统一压成 2px 免得一行放不下 */
+.pm-card__acts .el-button,
+.pm-sub__acts .el-button {
+  margin-left: 0;
+  padding: 0 6px;
+}
+.pm-card__subs {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--pk-surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pm-sub__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.pm-sub__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pk-ink);
+}
+.pm-sub__meta {
+  margin-left: auto;
+  flex: none;
+  font-size: 11.5px;
+  color: var(--pk-ink-3);
+}
+.pm-sub__score {
+  flex: none;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.pm-sub__acts {
+  margin-top: 2px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

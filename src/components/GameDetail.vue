@@ -143,6 +143,55 @@
                 >在上方选好玩家，点「开局选座」开始记分</span
               >
             </div>
+            <!-- 窄屏：表格 6 列最少 616px，塞进 375 只能靠横向滚动，
+                 所以整块换成卡片列表 —— 座位号、头像、段位、盈亏、筹码录入、计算器
+                 都还在，只是改成两行竖向排，不用左右拖 -->
+            <ul v-else-if="isCompact" class="seat-list">
+              <li v-for="row in playersSort" :key="row.name" class="seat-row">
+                <span class="seat-row__no">{{ row.seatNum }}</span>
+                <div class="seat-row__body">
+                  <div class="seat-row__head">
+                    <player-avatar
+                      :name="row.name"
+                      :avatar="avatarOf(row.name)"
+                      :size="28"
+                      @click.native="openAvatarPicker(row.name)"
+                    />
+                    <b class="seat-row__name">{{ row.name }}</b>
+                    <el-tooltip
+                      :content="tierTipOf(row.name)"
+                      placement="top"
+                    >
+                      <span class="tier" :class="tierClassOf(row.name)">{{
+                        tierLabelOf(row.name)
+                      }}</span>
+                    </el-tooltip>
+                    <span
+                      class="seat-row__delta"
+                      :class="deltaClass(deltaOf(row))"
+                      >{{ formatSigned(deltaOf(row)) }}</span
+                    >
+                  </div>
+                  <div class="seat-row__foot">
+                    <el-input
+                      v-model="row.chips"
+                      size="mini"
+                      placeholder="剩余筹码"
+                      @input="onChipsInput(row)"
+                    ></el-input>
+                    <el-button
+                      class="chip-calc-btn"
+                      size="mini"
+                      type="primary"
+                      plain
+                      icon="el-icon-coin"
+                      @click="openChipCalc(row)"
+                      >计算器</el-button
+                    >
+                  </div>
+                </div>
+              </li>
+            </ul>
             <el-table
               v-else
               :data="playersSort"
@@ -259,7 +308,11 @@
               <span class="card-header__hint">按今天上桌的号排名</span>
             </div>
             <div class="rank-wrap">
-              <rank-table :data="todayRanking" :show-expand="false" />
+              <rank-table
+                :data="todayRanking"
+                :show-expand="false"
+                :compact="isCompact"
+              />
               <div class="rank-foot">
                 <span>今日已结算 {{ todayGames }} 局</span>
                 <span class="rank-foot__hint">只统计今天上桌的号</span>
@@ -282,7 +335,7 @@
     <el-drawer
       :visible.sync="drawer"
       direction="rtl"
-      size="45%"
+      :size="drawerSize"
       custom-class="result-drawer"
       :with-header="false"
       :before-close="handleClose"
@@ -517,8 +570,16 @@
     />
 
     <!-- 设置 -->
-    <el-dialog title="设置" :visible.sync="settingsVisible" width="480px">
-      <el-form label-width="110px">
+    <el-dialog
+      title="设置"
+      :visible.sync="settingsVisible"
+      :width="isMobile ? '92%' : '480px'"
+    >
+      <!-- 窄屏 label 放到顶部：110px 的左侧 label 会吃掉小半屏，输入框只剩一条缝 -->
+      <el-form
+        :label-width="isMobile ? 'auto' : '110px'"
+        :label-position="isMobile ? 'top' : 'right'"
+      >
         <el-form-item label="每人底注筹码">
           <el-input-number
             v-model="settingsForm.baseChips"
@@ -645,7 +706,7 @@
     <el-dialog
       :visible.sync="chipCalcVisible"
       :title="chipCalcTitle"
-      width="420px"
+      :width="isMobile ? '92%' : '420px'"
       append-to-body
       custom-class="chip-calc-dialog"
       :before-close="handleChipCalcClose"
@@ -754,6 +815,7 @@ import {
   countsFromChips,
   emptyCounts,
 } from "../core/chips";
+import responsive from "../mixins/responsive";
 import PlayerManager from "./PlayerManager.vue";
 import RankTable from "./RankTable.vue";
 import ModuleStage from "./ModuleStage.vue";
@@ -763,6 +825,7 @@ import AvatarPicker from "./AvatarPicker.vue";
 
 export default {
   name: "GameDetail",
+  mixins: [responsive],
   components: {
     PlayerManager,
     RankTable,
@@ -813,6 +876,10 @@ export default {
     };
   },
   computed: {
+    /** 结算抽屉：窄屏占满整屏（半屏 45% 在手机上连名字都放不下） */
+    drawerSize() {
+      return this.isMobile ? "100%" : "45%";
+    },
     baseChips() {
       return this.settings.baseChips;
     },
@@ -3338,6 +3405,309 @@ export default {
 .score--lose {
   color: #67c23a;
   font-weight: 600;
+}
+
+/* ---------------- 窄屏座位卡（isCompact 时渲染） ----------------
+   手机一列、平板竖屏自动两列：240 是卡里一排「头像+长名字+段位+盈亏」的下限 */
+.seat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.seat-row {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--pk-line);
+  border-radius: 12px;
+  background: #fff;
+}
+.seat-row__no {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pk-primary);
+  background: var(--pk-primary-soft);
+  font-variant-numeric: tabular-nums;
+}
+.seat-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.seat-row__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.seat-row__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pk-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 盈亏顶到最右，和名字之间留白，扫一列时数字对齐 */
+.seat-row__delta {
+  margin-left: auto;
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.seat-row__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.seat-row__foot .el-input {
+  flex: 1;
+  min-width: 0;
+}
+.seat-row__foot .chip-calc-btn {
+  flex: none;
+}
+
+/* 平板竖屏（≤1024）：左栏只有 ~500px，结算按钮居中后右边缘正好撞上
+   绝对定位的人道模式开关，把它放回文档流 */
+@media (max-width: 1024px) {
+  .humane-model {
+    position: static;
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+  }
+  /* 平账校验一行放不下时「平账校验」四个字会被拆开，改成上下两行 */
+  .balance {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    font-size: 12px;
+  }
+}
+
+/* ================= 窄屏（≤768）=================
+   原则：横向能省的全省，纵向该分的分 —— 不靠缩放，靠重新排列。 */
+@media (max-width: 768px) {
+  /* 顶栏：标题缩一圈，三个数平分一行 */
+  .hero {
+    padding: 16px 14px 38px;
+    gap: 12px;
+  }
+  .hero__mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    font-size: 18px;
+  }
+  .hero__title {
+    font-size: 16px;
+  }
+  .hero__sub {
+    margin-top: 2px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+  }
+  .hero::after {
+    font-size: 84px;
+    bottom: -34px;
+  }
+  .hero__stats {
+    width: 100%;
+    gap: 0;
+    justify-content: space-between;
+  }
+  .hero__stat {
+    gap: 4px;
+  }
+  .hero__stat-k {
+    font-size: 10px;
+  }
+  .hero__stat-v {
+    font-size: 16px;
+  }
+
+  /* 操作条：开局一行、选人一行、工具横向滚一行，不再三层堆高 */
+  .toolbar {
+    margin: -26px 12px 12px;
+    padding: 10px 12px;
+    gap: 10px;
+    border-radius: 14px;
+  }
+  .toolbar__main {
+    width: 100%;
+    gap: 8px;
+  }
+  .btn-start {
+    flex: 1;
+    height: 36px;
+    padding: 0 16px;
+  }
+  .select-players {
+    width: 100%;
+    order: 3;
+  }
+  .toolbar__tools {
+    width: 100%;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .toolbar__tools::-webkit-scrollbar {
+    display: none;
+  }
+  .toolbar__divider {
+    display: none;
+  }
+  /* 单行滚动时每个工具都得看得出能点，补上浅底 */
+  .tool {
+    flex: none;
+    height: 32px;
+    padding: 0 10px;
+    background: var(--pk-surface-2);
+    border-color: var(--pk-line);
+  }
+
+  /* 两栏改上下堆叠：13/11 的浮动态在 375 宽下各只剩 200px */
+  .content {
+    padding: 0 12px;
+  }
+  .content ::v-deep .el-col {
+    float: none;
+    width: 100% !important;
+  }
+  .content ::v-deep .el-col + .el-col {
+    margin-top: 14px;
+  }
+  .content ::v-deep .el-card__header {
+    padding: 12px 14px;
+  }
+  .content ::v-deep .el-card__body {
+    padding: 12px 14px;
+  }
+  .card-header {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  .card-header__title {
+    font-size: 14px;
+  }
+  .card-header__hint {
+    font-size: 11.5px;
+    white-space: normal;
+  }
+  .seat-empty {
+    min-height: 200px;
+    padding: 32px 0;
+  }
+  .account-button {
+    margin-top: 16px;
+  }
+  .account-button ::v-deep .el-button--primary {
+    width: 100%;
+    height: 40px;
+  }
+  .rank-foot {
+    font-size: 11.5px;
+  }
+  .empty-tip {
+    margin: 0 12px;
+    padding: 40px 18px;
+  }
+
+  /* 结算抽屉铺满整屏：45% 在手机上连名字都放不下 */
+  ::v-deep .result-drawer {
+    min-width: 0;
+    max-width: none;
+  }
+  .result__hero {
+    padding: 22px 16px 52px;
+  }
+  .result__title {
+    font-size: 22px;
+  }
+  .champion {
+    margin: -20px 14px 0;
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .champion__amount {
+    font-size: 20px;
+  }
+  .result__scroll {
+    padding: 6px 14px 14px;
+  }
+  .board__row {
+    grid-template-columns: 26px minmax(46px, 74px) 1fr 66px;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .board__delta {
+    font-size: 12.5px;
+  }
+  .transfer {
+    grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr) 58px;
+    gap: 6px;
+    padding: 9px 10px;
+  }
+  .transfer__amount {
+    font-size: 13px;
+  }
+  .tickets {
+    padding: 12px 12px 10px;
+  }
+  .result__tickets-row .ticket-name {
+    min-width: 72px;
+  }
+  .result__footer {
+    padding: 10px 14px 12px;
+  }
+  /* 三个按钮原本被 el-button 的 margin-left 挤到换行，去掉后一行放得下 */
+  .result__actions {
+    gap: 8px;
+  }
+  .result__actions .el-button {
+    margin-left: 0;
+  }
+}
+
+/* 320 宽（SE 一代这类）：座位卡一行要同时塞下头像、长名字、段位、盈亏，
+   把字号和间距各让一点，5 个字的昵称不至于被截成「老…」 */
+@media (max-width: 360px) {
+  .seat-row {
+    padding: 10px;
+    gap: 8px;
+  }
+  .seat-row__head {
+    gap: 6px;
+  }
+  .seat-row__name {
+    font-size: 13px;
+  }
+  .seat-row__head .tier {
+    padding: 0 6px;
+    font-size: 11px;
+  }
+  .seat-row__delta {
+    font-size: 12px;
+  }
 }
 </style>
 

@@ -963,6 +963,27 @@ export default {
   align-items: center;
   gap: 4px;
 }
+
+/* 手机：4 列会把「累计流水 0.00」压成「0…」，两列刚好一屏读得下 */
+@media (max-width: 768px) {
+  .metrics {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .metric {
+    padding: 10px 12px;
+  }
+  /* 「老张 +30.00 10-20 11:00」在 150px 里放不下：
+     时间降级成第二行、允许换行，比截断成「10-2…」更可读 */
+  .metric__value--sm {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .metric__time {
+    flex-basis: 100%;
+    font-size: 10.5px;
+  }
+}
 </style>
 
 <style>

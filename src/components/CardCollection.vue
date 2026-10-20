@@ -1219,4 +1219,27 @@ export default {
     display: none;
   }
 }
+/* 手机：4 个资源数字并排时「碎片」会被挤成竖排，改成均分 + 不换行 */
+@media (max-width: 768px) {
+  .cc__stats {
+    width: 100%;
+    flex: 1 1 auto;
+    justify-content: space-between;
+  }
+  .cc__stat {
+    flex: 1;
+    justify-content: center;
+    padding: 4px 3px;
+    gap: 3px;
+  }
+  .cc__stat em {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .cc__grid,
+  .cc__grid--dex {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
+}
 </style>

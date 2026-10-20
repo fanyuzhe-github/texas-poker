@@ -351,4 +351,11 @@ export default {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+/* 手机上一列到底：两列时卡宽只剩 ~160，玩家名（小李）会竖着排 */
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
 </style>

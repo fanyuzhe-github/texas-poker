@@ -442,4 +442,11 @@ export default {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+/* 手机上一列：勋章说明本来就长，两列会把「解锁条件」「首杀记录」挤断行 */
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
 </style>
