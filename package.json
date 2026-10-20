@@ -6,7 +6,9 @@
     "serve": "NODE_OPTIONS=--openssl-legacy-provider vue-cli-service serve",
     "build": "NODE_OPTIONS=--openssl-legacy-provider vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "test": "node tests/run.js"
+    "test": "node tests/run.js",
+    "sim": "node scripts/sim-curve.mjs && node scripts/sim-pace.mjs && node scripts/sim-tickets.mjs && node scripts/sim-timeline.mjs",
+    "check:seed": "node scripts/repro-seed.mjs && node scripts/verify-seed.mjs && node scripts/warmup-check.mjs"
   },
   "dependencies": {
     "core-js": "^3.6.5",
