@@ -551,68 +551,6 @@
           </div>
         </el-form-item>
 
-        <!-- 实时同步已停用：用户是单机记账，且免费额度会被长连接烧穿。折叠保留，不干扰 -->
-        <el-form-item v-if="showLiveSync" label="实时同步">
-          <template v-if="cloud && cloud.liveEnabled">
-            <div class="cloud-status">
-              <i
-                :class="liveLinkStatus === 'live' ? 'el-icon-success' : 'el-icon-warning'"
-                :style="liveLinkStatus === 'live' ? '' : 'color:#e6a23c'"
-              ></i>
-              <span :style="liveLinkStatus === 'live' ? '' : 'color:#e6a23c'">
-                {{ liveLinkText }}
-              </span>
-            </div>
-            <div class="form-tip">
-              房间：{{ cloud.room }} · 上次同步：{{
-                cloud.liveLastSyncAt ? formatCloudTime(cloud.liveLastSyncAt) : "刚连上"
-              }}
-            </div>
-            <div class="form-tip">
-              每 10 秒检查一次云端变化，另一台设备的改动最迟 10 秒后到本机；页面切到后台会自动暂停
-            </div>
-            <div class="backup-actions cloud-actions">
-              <el-button
-                size="small"
-                icon="el-icon-refresh"
-                :loading="liveBusy"
-                @click="handleSyncLiveNow"
-                >立即同步</el-button
-              >
-              <el-button size="small" icon="el-icon-circle-close" @click="handleDisconnectLive"
-                >断开</el-button
-              >
-            </div>
-          </template>
-          <template v-else>
-            <el-input
-              v-model="liveForm.endpoint"
-              size="small"
-              placeholder="同步服务地址，如 https://xxx.deno.net"
-            ></el-input>
-            <el-input
-              v-model="liveForm.room"
-              size="small"
-              placeholder="房间码（4~64 位字母数字）"
-              style="margin-top: 8px"
-            >
-              <el-button slot="append" @click="handleRandomRoom">随机</el-button>
-            </el-input>
-            <div class="backup-actions cloud-actions">
-              <el-button size="small" :loading="liveBusy" @click="handleTestLive"
-                >测试连接</el-button
-              >
-              <el-button size="small" type="primary" :loading="liveBusy" @click="handleConnectLive"
-                >连接并同步</el-button
-              >
-            </div>
-          </template>
-          <div class="form-tip">
-            两台设备填同一个地址和房间码，数据自动保持一致；结算、改名、删局、抽卡、改底注都会自动
-            上传，不用手动点
-          </div>
-        </el-form-item>
-
         <el-form-item label="云备份">
           <!-- 一张浅蓝卡片收住「状态 / 上次备份 / 动作 / 断开」，别把按钮和说明摊成一堆灰字 -->
           <div class="cloud-card" :class="{ 'is-off': !cloud || !cloud.token || cloudTokenEditing }">
@@ -695,11 +633,6 @@
             </div>
           </div>
 
-          <div class="cloud-legacy">
-            <el-link type="info" :underline="false" @click="showLiveSync = !showLiveSync">
-              {{ showLiveSync ? "收起高级选项" : "旧版实时同步（已停用）" }}
-            </el-link>
-          </div>
         </el-form-item>
       </el-form>
       <div slot="footer">
@@ -883,7 +816,6 @@ export default {
       cloud: null, // 云备份配置（token / gistId / 上次同步），只在本机
       cloudBusy: false, // 正在上传或下载，防重复点击
       cloudBackupTimer: null, // 本地改动后的防抖备份定时器，非响应式
-      showLiveSync: false, // 旧版实时同步（Deno）默认收起，见上方说明
       liveForm: { endpoint: "", room: "" }, // 实时同步表单
       liveBusy: false,
       livePolling: false, // 轮询开关，非响应式
@@ -3735,15 +3667,6 @@ export default {
 }
 .cloud-help .cloud-help__warn {
   color: #d99a2b;
-}
-.cloud-legacy {
-  margin-top: 7px;
-  padding-top: 6px;
-  border-top: 1px solid #eef1f8;
-  font-size: 12px;
-}
-.cloud-legacy .el-link {
-  font-size: 12px;
 }
 .upload-inline {
   display: inline-block;
