@@ -289,7 +289,7 @@ def downsample(src, src_size, dst_size):
     return bytes(out)
 
 
-def write_png(path, size, pixels, quiet=False):
+def png_bytes(size, pixels):
     raw = bytearray()
     stride = size * 4
     for y in range(size):
@@ -308,10 +308,40 @@ def write_png(path, size, pixels, quiet=False):
     png += chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
     png += chunk(b"IDAT", zlib.compress(bytes(raw), 9))
     png += chunk(b"IEND", b"")
+    return png
+
+
+def write_png(path, size, pixels, quiet=False):
+    png = png_bytes(size, pixels)
     with open(path, "wb") as fh:
         fh.write(png)
     if not quiet:
         print(f"  {os.path.basename(path):24s} {size}x{size}  {len(png) / 1024:.1f} KB")
+
+
+def write_ico(path, entries):
+    """写多尺寸 .ico：每档直接塞 PNG（Vista 起浏览器/Windows 都认）。
+
+    浏览器标签页只会用到 16/32，但桌面快捷方式会挑更大的那档，所以一并给 48。
+    """
+    header = struct.pack("<HHH", 0, 1, len(entries))
+    offset = 6 + 16 * len(entries)
+    dirs = b""
+    blobs = b""
+    for size, pixels in entries:
+        data = png_bytes(size, pixels)
+        dim = 0 if size >= 256 else size  # 256 在 ICO 头里写作 0
+        dirs += struct.pack(
+            "<BBBBHHII", dim, dim, 0, 0, 1, 32, len(data), offset + len(blobs)
+        )
+        blobs += data
+    with open(path, "wb") as fh:
+        fh.write(header + dirs + blobs)
+    print(
+        f"  {os.path.basename(path):24s} "
+        + "/".join(str(s) for s, _ in entries)
+        + f"  {(len(header) + len(dirs) + len(blobs)) / 1024:.1f} KB"
+    )
 
 
 def read_png(path):
@@ -432,6 +462,17 @@ def main():
         os.path.join(PUBLIC, "apple-touch-icon.png"), 180,
         downsample(touch, MASTER, 180),
     )
+
+    # 浏览器标签页 / 桌面快捷方式用的 favicon.ico。
+    # 图标多小都要认得出：16px 下细节全糊，所以图形占比给得比大图更大一点。
+    fav_big = downsample(render_master(pal, False, 0.76), MASTER, 512)
+    write_ico(
+        os.path.join(PUBLIC, "favicon.ico"),
+        [(16, downsample(fav_big, 512, 16)),
+         (32, downsample(fav_big, 512, 32)),
+         (48, downsample(fav_big, 512, 48))],
+    )
+
     preview(os.path.join(PUBLIC, "icon-512.png"), "/tmp/icon-sizes.png")
     print("多尺寸对照：/tmp/icon-sizes.png")
 

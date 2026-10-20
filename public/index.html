@@ -14,9 +14,13 @@
       name="description"
       content="德州扑克牌桌记分、分账、段位与勋章"
     />
+    <!--
+      favicon 的缓存特别顽固（Chrome 能存好几天），改图后必须换一次 ?v=，
+      否则用户标签页上还是旧图标。这次是换掉 vue-cli 自带的那个绿色 V。
+    -->
     <link
       rel="icon"
-      href="<%= BASE_URL %>favicon.ico"
+      href="<%= BASE_URL %>favicon.ico?v=2"
     />
 
     <!--
