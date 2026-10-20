@@ -78,25 +78,25 @@ Vue 2.6 + Element UI 2.15 + vue-cli 4（**勿升级**）。build/dev 要 `NODE_O
 - ⚠️ 换 token 走设置页「更换 token」（`cloudTokenEditing`）；保存时**清掉 `gistId`** 让它重新按文件名
   认领（同账号认回同一份；换账号 = 换网盘，不会误写旧存档）。别改回「存过 token 就藏起输入框」。
 
-### Deno 实时同步（`b4ace1e`，**2026-10-20 起停用**，`https://texas-poker.fanyuzhe-github.deno.net`）
-⚠️ 后缀 **.deno.net** 不是 .deno.dev。org `fanyuzhe-github` / app `texas-poker` / KV `poker-kv` 已 Attach。
-- `server/main.ts`：`GET/POST /api/state?room=`（GET 支持 `&since=`）、`/api/ping`、`/api/watch`（SSE，**已弃用**）。
-- `src/utils/live.js` 唯一发请求：`normalizeEndpoint/isValidRoom/randomRoom/pingEndpoint/fetchState/pushState/pollState`。
-- `storage.js` cloud：`endpoint/room/liveEnabled/liveLastSyncAt/liveSyncedUpdatedAt/liveLastPushAt`。前端零新 SDK。
-- ⚠️ **新版 Deploy EA 两个硬门槛**：① 仓库有 `package.json` 会被猜成「跑 npm 构建」→ 根目录 `deno.json` 写死 `deploy.runtime={type:"dynamic",entrypoint:"./server/main.ts"}`，**不写 install/build**；② **KV 必须手动 Provision 再 Assign**，`openKv()` 不会自动建库。
-- ⚠️ `--unstable-kv` 不能传给 Deploy → 靠 `deno.json` 的 `"unstable":["kv"]`。`setInterval` 返回 `ReturnType<typeof setInterval>`。部署只能用户自己做。
-- ⚠️ 房间码即口令（4~64 位字母数字），UI 默认「随机」生成。
+### ❌ Deno 实时同步（**已彻底删除**，`df5e501` 去 UI / `2231319` 去代码）
+用户 2026-10-20 明确确认「不要实时同步了，清理干净」→ 已删 `src/utils/live.js`、`server/`（main.ts + README）、
+根目录 `deno.json`，以及 `GameDetail.vue` 里全部 live 方法（`startLivePoll/pollLiveOnce/pushLiveSnapshot/
+syncLiveOnStart/scheduleLivePush/handleConnectLive/handleTestLive/handleDisconnectLive/handleRandomRoom…`）、
+data 字段、`liveLinkText` computed、`offLocalChange` 订阅里的 `scheduleLivePush`。
+- `normalizeCloud()` 里的 `endpoint/room/liveEnabled/liveLastSyncAt/liveSyncedUpdatedAt/liveLastPushAt` **一并删除**
+  （老的 localStorage 里还有这些键，但已不读，无所谓）。
+- ⚠️ **别再把它加回来**：用户场景是单机记账，免费层长连接会烧穿额度（见下），Gist 冷备份已覆盖「防丢 + 换设备」。
+- 保留的只有 `storage.js` 的 `onLocalChange/muteLocalChange`（现在专供 Gist 3 秒防抖自动备份）与
+  `core/sync.js` 的 `buildSnapshot/parseSnapshot/isSnapshotTooBig`（Gist 在用）。`decideSync` 仍在 core 里（有单测），
+  但组件已不再引用。
 
-#### 自动上传 / 拉取（`f1f2528`）
-- ⚠️ **开关在 storage.js 写入口**：`onLocalChange/muteLocalChange` 在四个 `save*` 里统一广播（25 处调用逐处补必漏），订阅后 **1200ms 防抖**推一次。单测 `test-storage-change.js` 17 项。
-- ⚠️ `applySnapshot` 必须包 `muteLocalChange`（再推回去会被 409 拒，白弹告警）。
-- ⚠️ `handleWipeData` 要先 force 推空快照再刷新，否则旧数据又被当「更新的」拉回来。
-- ⚠️ 防抖抑制**只能用 `liveLastPushAt`**（`liveLastSyncAt` 收到云端也刷新，会吞掉本机改动）；抑制时**不能直接丢弃**，要延后再推。
+<details><summary>历史踩坑（仅留档，代码已不存在）</summary>
 
-#### ⚠️ 2026-10-20 停服事故 → 改短轮询（`a7821dc`）
-现象：设置页弹「连不上同步服务」，实际所有接口 503 `USAGE_EXCEEDED`（应用被暂停）。
-**根因**：SSE 长连接让 Deno 实例一直 loaded，免费额度按 **768MB × 每秒**计内存时间（Free 150 GiB·hr/月，未验证组织更低），一台设备挂一夜 ≈ 18 GiB·hr/天 → 几小时烧穿。**免费层不能有长连接**。
-> 停服时 503 **不带 CORS 头** → fetch 抛 TypeError → 前端只能报「连不上」，看不出是停服。
-修法：`?since=` + 服务端小 `meta` 键，没变化只回 45 字节 `{unchanged:true}`；前端 10 秒一轮、**页面隐藏即暂停**、失败退避 10/20/40/60s。实例可缩容到 0。
-⚠️ 别为「更实时」把 SSE 接回来；**别先 `res.json()` 再判状态码**（停服返回纯文本会误报「看不懂的内容」）。
-⚠️ 暂停是**组织级、直到下个计费周期**，重新部署不能解冻，只能绑卡验证 / 升 Pro / 等下月。
+- 服务地址 `https://texas-poker.fanyuzhe-github.deno.net`（后缀 **.deno.net** 不是 .deno.dev），org `fanyuzhe-github` / app `texas-poker` / KV `poker-kv`。
+- **新版 Deploy EA 两个硬门槛**：① 仓库有 `package.json` 会被猜成「跑 npm 构建」→ `deno.json` 写死
+  `deploy.runtime={type:"dynamic",entrypoint:"./server/main.ts"}` 且不写 install/build；② **KV 必须手动 Provision 再 Assign**。
+- **2026-10-20 停服事故**：SSE 长连接让实例一直 loaded，免费额度按 **768MB × 每秒**计内存时间 → 几小时烧穿，
+  全站 503 `USAGE_EXCEEDED`，且 503 **不带 CORS 头** → 前端只能报「连不上」。免费层不能有长连接。
+- 暂停是**组织级、直到下个计费周期**，重新部署不解冻，只能绑卡 / 升 Pro / 等下月。
+
+</details>
