@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>德州扑克结算系统 · 全新升级</title>
+<style>
+  :root {
+    --bg: #eef1f8;
+    --surface: #ffffff;
+    --surface-2: #f7f9fd;
+    --line: #e4e9f3;
+    --ink: #1b2438;
+    --ink-2: #566179;
+    --ink-3: #8b96ad;
+    --primary: #3a55c8;
+    --primary-dark: #2a3f9e;
+    --gold: #c3902f;
+    --gold-soft: #fdf4e2;
+    --navy-1: #111c31;
+    --navy-2: #1d2f52;
+    --navy-3: #294168;
+    --radius: 16px;
+    --shadow: 0 1px 2px rgba(20,34,61,.04), 0 6px 16px rgba(20,34,61,.05);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px 64px; }
+
+  /* 头图：深海军蓝绒布 + 香槟金，跟系统里那张牌桌一个调子 */
+  .hero {
+    background: linear-gradient(135deg, var(--navy-1) 0%, var(--navy-2) 55%, var(--navy-3) 100%);
+    color: #fff;
+    padding: 56px 0 60px;
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::after {
+    content: "♠";
+    position: absolute; right: -40px; top: -60px;
+    font-size: 320px; line-height: 1;
+    color: rgba(255,255,255,.045);
+  }
+  .hero__inner { max-width: 880px; margin: 0 auto; padding: 0 20px; position: relative; }
+  .hero__mark { font-size: 30px; color: var(--gold); margin-right: 10px; }
+  .hero__title { margin: 0; font-size: 34px; letter-spacing: 1px; }
+  .hero__sub { margin: 10px 0 0; color: rgba(255,255,255,.72); font-size: 15px; }
+  .hero__url {
+    display: inline-block; margin-top: 22px;
+    background: linear-gradient(180deg, #e3c379, var(--gold));
+    color: #2a1f06; font-weight: 700; text-decoration: none;
+    padding: 11px 22px; border-radius: 999px; font-size: 15px;
+    box-shadow: 0 8px 20px rgba(0,0,0,.22);
+  }
+  .hero__hint { margin: 12px 0 0; font-size: 13px; color: rgba(255,255,255,.55); }
+
+  h2 { font-size: 21px; margin: 40px 0 16px; display: flex; align-items: center; gap: 8px; }
+  h2::before { content: ""; width: 4px; height: 18px; background: var(--gold); border-radius: 2px; }
+  .lead { color: var(--ink-2); margin: 0 0 20px; }
+
+  .card {
+    background: var(--surface); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 20px 22px; margin-bottom: 14px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .feat__tag {
+    display: inline-block; font-size: 12px; font-weight: 700;
+    color: var(--gold); background: var(--gold-soft);
+    padding: 2px 10px; border-radius: 999px; margin-bottom: 8px;
+  }
+  .feat__title { margin: 0 0 8px; font-size: 17px; }
+  .feat__text { margin: 0; color: var(--ink-2); font-size: 14px; }
+  .feat__list { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface);
+    border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); font-size: 14px; }
+  th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--surface-2); font-size: 13px; color: var(--ink-2); }
+  tr:last-child td { border-bottom: none; }
+  td .before { color: var(--ink-3); }
+
+  ol.steps { margin: 0; padding-left: 22px; }
+  ol.steps li { margin-bottom: 8px; }
+  code { background: var(--surface-2); border: 1px solid var(--line);
+    padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+
+  .foot { margin-top: 36px; padding: 18px 22px; background: var(--surface-2);
+    border: 1px dashed var(--line-strong, #d2dbeb); border-radius: var(--radius);
+    color: var(--ink-2); font-size: 13px; }
+  .foot b { color: var(--ink); }
+
+  @media (max-width: 768px) {
+    .hero { padding: 40px 0 44px; }
+    .hero__title { font-size: 26px; }
+    .hero::after { font-size: 200px; right: -30px; top: -40px; }
+    .grid { grid-template-columns: 1fr; }
+    th, td { padding: 10px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero__inner">
+    <h1 class="hero__title"><span class="hero__mark">♠</span>德州扑克结算系统 · 全新升级</h1>
+    <p class="hero__sub">会记账、会排名、会颁奖，还会发牌（卡）—— 手机电脑都能开，不用装 App</p>
+    <a class="hero__url" href="https://fanyuzhe-github.github.io/texas-poker/" target="_blank" rel="noopener">fanyuzhe-github.github.io/texas-poker</a>
+    <p class="hero__hint">建议手机浏览器里「添加到主屏幕」，点开就是全屏，跟 App 一样</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <h2>这次修好了什么</h2>
+  <table>
+    <tr><th style="width:22%">变化</th><th style="width:39%">以前</th><th>现在</th></tr>
+    <tr>
+      <td><b>手机上能用</b></td>
+      <td class="before">表格挤成一团，要左右拖</td>
+      <td>座位表、玩家管理在窄屏自动换成卡片列表；还能「添加到主屏幕」，点开全屏无地址栏</td>
+    </tr>
+    <tr>
+      <td><b>数据不怕丢</b></td>
+      <td class="before">只存在本机，清缓存就全没</td>
+      <td>设置里填一次 GitHub token，之后<b>自动备份</b>；换电脑、换手机一键恢复</td>
+    </tr>
+    <tr>
+      <td><b>老账不再算错</b></td>
+      <td class="before">流水只留最近 200 局，第 201 局起赛季积分、纪录、勋章全部少算</td>
+      <td>改成按体积保留（约 2000 局），装不下才砍最老的几局，并且明确提示</td>
+    </tr>
+    <tr>
+      <td><b>删局不留幽灵</b></td>
+      <td class="before">删掉一局后，段位、纪录、勋章还按那局算</td>
+      <td>删局 / 清空流水会按剩余对局<b>重新重放一遍</b>，所有派生数据一起重算</td>
+    </tr>
+    <tr>
+      <td><b>一人多号</b></td>
+      <td class="before">多个小号各自为战，算总账靠手加</td>
+      <td>主账号下挂子账号，总榜自动汇总不重复计分；主账号不上桌，只做汇总</td>
+    </tr>
+  </table>
+
+  <h2>新增亮点</h2>
+  <div class="grid">
+    <div class="card">
+      <span class="feat__tag">段位</span>
+      <h3 class="feat__title">12 档段位，输赢都有称号</h3>
+      <p class="feat__text">从「人形ATM」一路打到「赌神下凡」，中间有慈善赌王、资深韭菜、奶茶富翁、割韭狂魔……每档配一句专属吐槽。座位上直接显示，悬停看吐槽。</p>
+    </div>
+    <div class="card">
+      <span class="feat__tag">记录榜</span>
+      <h3 class="feat__title">15 项纪录，分三组</h3>
+      <p class="feat__text">高光 6 项 / 至暗 6 项 / 韧性 3 项。</p>
+      <ul class="feat__list">
+        <li>高光：单局最高积分 · 碾压王 · 赛季最高 · 最高连胜 · 最猛一波 · 最高胜率</li>
+        <li>至暗：最多输光 · 最长连败 · 垫底王 · 当头一棒 · 高台跳水 · 长夜漫漫</li>
+        <li>韧性：翻盘王 · 不死小强 · 连败终结者</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="feat__tag">勋章墙</span>
+      <h3 class="feat__title">28 枚勋章，输了也留个名</h3>
+      <p class="feat__text">荣誉 / 连胜 / 黑章三类，3 连胜到 10 连胜各有各的章，黑章专门记那些不想提的瞬间。每枚都记着解锁的具体时刻。</p>
+    </div>
+    <div class="card">
+      <span class="feat__tag">抽卡收藏</span>
+      <h3 class="feat__title">71 张卡，靠战绩换券抽</h3>
+      <p class="feat__text">打破纪录、点亮勋章会发奖券：单抽 3 券，十连 21 券更划算；当天冠军每天免费单抽一次。抽到的卡能直接设成头像，1★ 到 5★ 外环颜色不同。</p>
+    </div>
+    <div class="card">
+      <span class="feat__tag">今日结算</span>
+      <h3 class="feat__title">领奖台 + 数据看板 + 赛季榜</h3>
+      <p class="feat__text">每局结算完亚军 / 冠军 / 季军上台，盈亏一张条看完；看板里有资金曲线等图表；赛季榜按春 / 夏 / 秋 / 冬分季（冬季跨年），能翻页看历史赛季。</p>
+    </div>
+    <div class="card">
+      <span class="feat__tag">结算</span>
+      <h3 class="feat__title">数筹码、转账一步到位</h3>
+      <p class="feat__text">筹码用计算器一键数，提交前先验零和，数错了当场拦下；转账方案自动生成，打开「人道模式」让输得多的先付清，少跑几趟。</p>
+    </div>
+  </div>
+
+  <h2>三步上手</h2>
+  <div class="card">
+    <ol class="steps">
+      <li>打开网址（收藏一下，或者直接加到手机桌面）</li>
+      <li>点<b>「开局选座」</b>选人 —— 名册是空的就直接敲名字回车，新玩家自动入库</li>
+      <li>填各人剩余筹码 → 点<b>「结算本局」</b> → 看领奖台、领奖券</li>
+    </ol>
+  </div>
+
+  <h2>关于数据</h2>
+  <div class="foot">
+    所有数据都在你自己手上：本机浏览器 + 你自己名下的 GitHub 备份，<b>不经过任何中间服务器</b>。
+    云备份用你自己的 token（只勾 <code>gists</code> 权限即可），随时可以断开，也可以一键清空云端存档。
+  </div>
+
+  <div class="foot" style="margin-top:14px; text-align:center; color:var(--ink-3);">
+    拉人开桌吧，谁先打到「赌神下凡」，榜上见。
+  </div>
+</div>
+</body>
+</html>
