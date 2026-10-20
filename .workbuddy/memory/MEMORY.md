@@ -33,7 +33,7 @@ Vue2.6 + Element UI 2.15 + vue-cli4（**勿升级**）。build/dev 需 `NODE_OPT
 `core/tier.js` 12 档（`<-100` / `-100~100` 每 20 一档 / `>100`，只有 80~100 含 100）。称号：人形ATM·慈善赌王·散财童子·资深韭菜·充值战神·萌新韭菜·小富即安·奶茶富翁·牌桌新贵·割韭狂魔·点石成金·赌神下凡（别拆「韭菜→镰刀」线）。
 - ⚠️ **恰好 0 分走专属档 `ZERO_TIER`「荷官」**（2026-10-20 用户定）：一分没输没赢 = 来上班发牌的。它**不占 12 档序列**（`tierIndex(0)` 仍是 6，区间 0~20），只在 `tierOf` 里兜住，区间文案回「0 分」而不是「0 ~ +20 分」；赢 10 块仍是小富即安、输 10 块仍是萌新韭菜。
 - 只在「本局座位」显示（RankTable 已无段位列）；座位行是临时对象 → 回当前赛季积分表取 `tierScoreOf`。
-- ⚠️ `buildSeasonScores(history, players, now)` → `Map<主账号, 赛季分>`：只筛本赛季流水 + `mainOf` 求和，**不重放连胜**；没上过桌的账号显示 0 分「小富即安」+ tooltip。`test-tier.js` 47 / `test-season-scores.js` 9。
+- ⚠️ `buildSeasonScores(history, players, now)` → `Map<主账号, 赛季分>`：只筛本赛季流水 + `mainOf` 求和，**不重放连胜**；没上过桌的账号按 0 分算 → 显示「荷官」+ tooltip。`test-tier.js` 55 / `test-season-scores.js` 9。
 
 ## 统计 / 记录榜 / 勋章 / 抽卡
 子账号 `mainOf()` 归主账号；金额全程整数「分」；并列用 `compareName()` 码点（**禁 `localeCompare`**）。依赖单向：records→season→streak→stats。
