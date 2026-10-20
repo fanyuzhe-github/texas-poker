@@ -116,7 +116,7 @@
         <button type="button" class="tool" @click="playerManagerVisible = true">
           <i class="el-icon-user"></i><span>玩家管理</span>
         </button>
-        <button type="button" class="tool" @click="settingsVisible = true">
+        <button type="button" class="tool" @click="openSettings">
           <i class="el-icon-setting"></i><span>设置</span>
         </button>
       </div>
@@ -614,7 +614,7 @@
         </el-form-item>
 
         <el-form-item label="云备份">
-          <template v-if="cloud && cloud.token">
+          <template v-if="cloud && cloud.token && !cloudTokenEditing">
             <div class="cloud-status">
               <i class="el-icon-success"></i>
               <span>{{ cloud.gistId ? "已连接到云端" : "token 已保存，还没备份过" }}</span>
@@ -639,6 +639,9 @@
                 @click="handleRestoreFromCloud"
                 >从云端恢复</el-button
               >
+              <el-button size="small" icon="el-icon-edit" @click="startEditCloudToken"
+                >更换 token</el-button
+              >
               <el-button size="small" icon="el-icon-circle-close" @click="handleDisconnectCloud"
                 >断开</el-button
               >
@@ -650,17 +653,28 @@
               size="small"
               type="password"
               show-password
-              placeholder="粘贴 GitHub token（只保存在本机）"
+              placeholder="粘贴 classic token（ghp_ 开头，只保存在本机）"
             ></el-input>
             <div class="backup-actions cloud-actions">
               <el-button size="small" type="primary" @click="handleSaveCloudToken"
                 >保存 token</el-button
               >
+              <el-button v-if="cloudTokenEditing" size="small" @click="cancelEditCloudToken"
+                >取消</el-button
+              >
+            </div>
+            <div v-if="cloudTokenEditing" class="form-tip">
+              换的是同一个 GitHub 账号的 token 就没关系：存档按文件名认领，换完点「立即备份」
+              会自动接回原来那一份。换成别的账号的 token，等于换了个网盘，旧存档就找不到了。
             </div>
           </template>
           <div class="form-tip">
             存档放在 GitHub Gist，免费且不会因闲置被清空。换台电脑填同一个 token，打开页面会自动
             提示恢复；本地任何改动也会自动备份。token 只存本机，不会上传。
+          </div>
+          <div class="form-tip">
+            必须是 <b>classic</b> token（Developer settings → Personal access tokens → Tokens
+            (classic)），只勾 <b>gist</b>。细粒度 token（github_pat_ 开头）没有 Gist 权限，用不了。
           </div>
           <div class="form-tip">
             <el-link type="info" :underline="false" @click="showLiveSync = !showLiveSync">
@@ -759,6 +773,7 @@ import {
   updateGist,
   fetchGist,
   findGistId,
+  isFineGrainedToken,
 } from "../utils/gist";
 import {
   normalizeEndpoint,
@@ -859,6 +874,7 @@ export default {
       liveLinkStatus: "connecting", // 同步状态：live 正常 / down 连不上 / idle 已暂停
       offLocalChange: null, // 取消订阅本地改动
       cloudForm: { token: "" }, // 设置弹窗里的 token 输入框
+      cloudTokenEditing: false, // 已有 token 时点「更换 token」才展开输入框
     };
   },
   computed: {
@@ -2007,15 +2023,49 @@ export default {
       this.cloudBackupTimer = null;
     },
 
+    /** 打开设置弹窗：顺手把「更换 token」的输入框收回去，免得上次没填完一直挂着 */
+    openSettings() {
+      this.cloudTokenEditing = false;
+      this.settingsVisible = true;
+    },
+
+    /** 已有 token 时想换一个：把输入框展开，原来的按钮先收起来 */
+    startEditCloudToken() {
+      this.cloudForm = { token: "" };
+      this.cloudTokenEditing = true;
+    },
+
+    cancelEditCloudToken() {
+      this.cloudTokenEditing = false;
+      this.cloudForm = { token: "" };
+    },
+
     handleSaveCloudToken() {
       const token = String(this.cloudForm.token || "").trim();
       if (!token) {
         this.$message.warning("请先粘贴 token");
         return;
       }
-      this.cloud = { ...loadCloud(), token };
+      if (isFineGrainedToken(token)) {
+        this.$message.error(
+          "这是细粒度 token（github_pat_ 开头），GitHub 没给它读写 Gist 的权限，生成时也勾不到。" +
+            "请换成 classic token：Developer settings → Personal access tokens → Tokens (classic)，只勾 gist。"
+        );
+        return;
+      }
+
+      const prev = loadCloud();
+      const changed = !!prev.token && prev.token !== token;
+      // 换了 token 就把 gistId 忘掉，下次上传重新按文件名认领。
+      // 同账号换 token 能认回同一份；换成别账号的 token 则当作新网盘，不会误写旧存档。
+      this.cloud = { ...prev, token, gistId: changed ? "" : prev.gistId };
       saveCloud(this.cloud);
-      this.$message.success("token 已保存到本机，点「立即备份」试试能不能连上");
+      this.cloudTokenEditing = false;
+      this.$message.success(
+        changed
+          ? "token 已更换，点「立即备份」接回云端存档"
+          : "token 已保存到本机，点「立即备份」试试能不能连上"
+      );
     },
 
     handleBackupNow() {

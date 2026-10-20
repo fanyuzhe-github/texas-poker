@@ -114,6 +114,17 @@ export async function fetchGist(token, gistId) {
   return typeof file.content === "string" ? file.content : "";
 }
 
+/**
+ * 认出细粒度 token。
+ *
+ * GitHub 的 fine-grained token（github_pat_ 开头）到今天都不支持 Gist 权限，
+ * 生成时压根没有勾选项 —— 用户填了它会「保存成功但永远同步不了」。
+ * 所以在保存这一步就拦下来，告诉他该换哪种。
+ */
+export function isFineGrainedToken(token) {
+  return /^github_pat_/.test(String(token || "").trim());
+}
+
 /** 看看 token 能不能用，顺便验证 gist 是否还在 */
 export async function checkToken(token) {
   await request(API_BASE, { token });
